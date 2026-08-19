@@ -1,0 +1,2178 @@
+import React, { useState, useEffect, useRef } from "react";
+import { firebaseMock, UserProfile as FirebaseUserProfile } from "./firebaseMock";
+import { LoginPage } from "./LoginPage";
+import { CustomerPortal } from "./CustomerPortal";
+import { SellerPortal } from "./SellerPortal";
+import { AdminPortal } from "./AdminPortal";
+import { ProductRepository } from "./services/productRepository";
+import {
+  Home,
+  ShoppingBag,
+  MessageSquare,
+  Wallet,
+  Grid,
+  Lock,
+  User,
+  Shield,
+  ArrowRight,
+  LogOut,
+  RefreshCw,
+  Plus,
+  Trash2,
+  CheckCircle,
+  XCircle,
+  Tag,
+  Star,
+  Search,
+  SlidersHorizontal,
+  ArrowUpDown,
+  Heart,
+  Eye,
+  FileText,
+  AlertCircle
+} from "lucide-react";
+
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || (
+  window.location.origin.includes("localhost")
+    ? "http://localhost:3000"
+    : `${window.location.protocol}//${window.location.hostname}:3000`
+);
+
+const CLOUDINARY_CLOUD_NAME = "ddvwimzfr";
+const CLOUDINARY_UPLOAD_PRESET = "nexus_preset";
+
+interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  activeRole: string;
+  roles: string[];
+  walletBalance?: number;
+  mobileNumber?: string;
+  age?: string;
+  dob?: string;
+  address?: string;
+  pincode?: string;
+  district?: string;
+  state?: string;
+  country?: string;
+  businessName?: string;
+  location?: string;
+  businessType?: string;
+}
+
+interface Brand {
+  id: string;
+  name: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  parentId: string | null;
+}
+
+interface Product {
+  id: string;
+  title: string;
+  description: string;
+  brand: Brand | null;
+  category: Category;
+  productType: string;
+  ratingAvg: number;
+  reviewCount: number;
+  variants: ProductVariant[];
+}
+
+interface ProductVariant {
+  id: string;
+  name: string;
+  sku: string;
+  attributes: string | null;
+  imageUrl: string | null;
+  listings: SellerListing[];
+  dimensions: string;
+  weight: string;
+  material_composition: string;
+  country_of_origin: string;
+  warranty_information: string;
+  price_basis: string;
+  price_checked_date: string;
+  image_source: string;
+  image_alt_text: string;
+  image_source_url: string;
+  image_status: string;
+  image_search_url: string;
+  source_dataset: string;
+  stock_quantity: number;
+  availability_status: string;
+}
+
+interface SellerListing {
+  id: string;
+  price: number; // in cents
+  compareAtPrice: number | null; // in cents
+  currency: string;
+  seller: {
+    id: string;
+    businessName: string;
+  };
+  inventory: {
+    quantity: number;
+  } | null;
+}
+
+interface CartItem {
+  id: string;
+  quantity: number;
+  sellerListing: {
+    id: string;
+    price: number;
+    compareAtPrice: number | null;
+    seller: { businessName: string };
+    productVariant: {
+      name: string;
+      imageUrl: string | null;
+      product: { title: string };
+    };
+  };
+}
+
+interface WishlistItem {
+  id: string;
+  sellerListing: {
+    id: string;
+    price: number;
+    seller: { businessName: string };
+    productVariant: {
+      name: string;
+      imageUrl: string | null;
+      product: { title: string };
+    };
+  };
+}
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<"home" | "shop" | "chat" | "wallet" | "services">("home");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+
+  // Catalog States
+  const productRepoRef = useRef(new ProductRepository());
+  const [isCsvLoaded, setIsCsvLoaded] = useState(false);
+  const [csvLoadProgress, setCsvLoadProgress] = useState("Loading CSV Catalog...");
+  const [products, setProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [sortBy, setSortBy] = useState<string>("newest");
+  const [priceMin, setPriceMin] = useState<string>("");
+  const [priceMax, setPriceMax] = useState<string>("");
+  const [paginationLimit, setPaginationLimit] = useState<number>(48);
+  const [totalProductsCount, setTotalProductsCount] = useState<number>(0);
+  const [subcategories, setSubcategories] = useState<string[]>([]);
+  
+  // Details Modal States
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [selectedListing, setSelectedListing] = useState<SellerListing | null>(null);
+  const [productDetailsReviews, setProductDetailsReviews] = useState<any[]>([]);
+
+  // Persistent Cart & Wishlist States
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
+
+  // Ingestion Barcode Input
+  const [barcodeInput, setBarcodeInput] = useState<string>("");
+
+  // Common UI Alerts
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (successMsg) {
+      const timer = setTimeout(() => setSuccessMsg(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg]);
+
+  useEffect(() => {
+    if (errorMsg) {
+      const timer = setTimeout(() => setErrorMsg(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [errorMsg]);
+
+  // Overlays
+  const [showCartDrawer, setShowCartDrawer] = useState(false);
+  const [showWishlistDrawer, setShowWishlistDrawer] = useState(false);
+  const [showCheckoutConfirmation, setShowCheckoutConfirmation] = useState(false);
+  const [checkoutPin, setCheckoutPin] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+
+  // Firebase Multi-Role Auth states
+  const [authMode, setAuthMode] = useState<"LOGIN" | "SIGNUP" | "FORGOT_PASSWORD" | "VERIFY_CODE">("LOGIN");
+  const [activeLoginRole, setActiveLoginRole] = useState<"CUSTOMER" | "SELLER" | "ADMIN">("CUSTOMER");
+  
+  // Registration Profile fields
+  const [regName, setRegName] = useState("");
+  const [regMobile, setRegMobile] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regAge, setRegAge] = useState("");
+  const [regDob, setRegDob] = useState("");
+  const [regAddress, setRegAddress] = useState("");
+  const [regPincode, setRegPincode] = useState("");
+  const [regDistrict, setRegDistrict] = useState("");
+  const [regState, setRegState] = useState("");
+  const [regCountry, setRegCountry] = useState("");
+  const [regBusinessName, setRegBusinessName] = useState("");
+  const [regLocation, setRegLocation] = useState("");
+  const [regBusinessType, setRegBusinessType] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirmPassword, setRegConfirmPassword] = useState("");
+
+  // Forgot Password fields
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [sentCode, setSentCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+
+  // Admin and Seller Custom dashboard tabs/states
+  const [adminTab, setAdminTab] = useState<"users" | "add_admin" | "moderation" | "products">("users");
+  const [sellerTab, setSellerTab] = useState<"catalog" | "add_listing" | "profile">("catalog");
+  const [firebaseUsersList, setFirebaseUsersList] = useState<FirebaseUserProfile[]>([]);
+  
+  // New Admin Form State
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  const [newAdminPass, setNewAdminPass] = useState("");
+
+  // Add Product Variant state for Seller Portal
+  const [sellTitle, setSellTitle] = useState("");
+  const [sellDescription, setSellDescription] = useState("");
+  const [sellSku, setSellSku] = useState("");
+  const [sellPrice, setSellPrice] = useState("");
+  const [sellStock, setSellStock] = useState("");
+  const [sellImageUrl, setSellImageUrl] = useState("");
+  const [sellFolder, setSellFolder] = useState("food_beverages/apple");
+
+  // Review Input
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewText, setReviewText] = useState<string>("");
+
+  // Profile and Buy Now overlay states
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showBuyNowConfirmation, setShowBuyNowConfirmation] = useState(false);
+  const [buyNowListing, setBuyNowListing] = useState<any | null>(null);
+  const [buyNowName, setBuyNowName] = useState("");
+  const [buyNowPhone, setBuyNowPhone] = useState("");
+  const [buyNowAddress, setBuyNowAddress] = useState("");
+  const [buyNowPincode, setBuyNowPincode] = useState("");
+  const [buyNowState, setBuyNowState] = useState("");
+  const [buyNowCountry, setBuyNowCountry] = useState("");
+  const [buyNowPin, setBuyNowPin] = useState("");
+
+  // Action history logger helper
+  const logUserAction = (email: string, actionText: string) => {
+    try {
+      const key = `nexus_actions_${email.toLowerCase()}`;
+      const existing = localStorage.getItem(key);
+      const actions = existing ? JSON.parse(existing) : [];
+      actions.unshift({
+        id: Math.random().toString(36).substring(2, 9),
+        text: actionText,
+        timestamp: new Date().toLocaleString()
+      });
+      localStorage.setItem(key, JSON.stringify(actions));
+    } catch (e) {
+      console.error("Failed to log user action:", e);
+    }
+  };
+
+  // Direct media upload to Cloudinary using unsigned upload presets
+  const handleCloudinaryUpload = async (file: File) => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      const cleanSeller = ((user?.businessName || user?.name || "seller") as string)
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      const keyword = sellFolder.split("/").pop() || "product";
+      const filename = `${keyword}_${cleanSeller}`;
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+      formData.append("folder", `nexus1/${sellFolder}`);
+      formData.append("public_id", filename);
+
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message || "Failed to upload image to Cloudinary.");
+      }
+
+      setSellImageUrl(data.secure_url);
+      setSuccessMsg("Image uploaded successfully to Cloudinary!");
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || "Cloudinary upload failed.");
+      setTimeout(() => setErrorMsg(null), 4000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Environment Flag
+  const isProd = import.meta.env.PROD;
+
+  // Load CSV Catalog once on mount (Development fallback only)
+  useEffect(() => {
+    if (isProd) {
+      setIsCsvLoaded(true);
+      return;
+    }
+
+    const loadCatalog = async () => {
+      try {
+        const res = await fetch("/NEXUS_MASTER_PRODUCT_CATALOG_COMBINED.csv");
+        if (!res.ok) throw new Error("Failed to load catalog CSV file.");
+        const text = await res.text();
+        setCsvLoadProgress("Parsing CSV catalog records...");
+        await productRepoRef.current.loadFromCsv(text);
+        setIsCsvLoaded(true);
+        
+        // Populate categories
+        const cats = productRepoRef.current.getCategories().map(cat => ({
+          id: cat,
+          name: cat,
+          parentId: null
+        }));
+        setCategories(cats);
+      } catch (err: any) {
+        console.error("Error loading master CSV catalog:", err);
+        setCsvLoadProgress("Error loading catalog.");
+      }
+    };
+    loadCatalog();
+  }, []);
+
+  // Fetch Categories Hierarchy
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/categories`);
+      if (res.ok) {
+        const list = await res.json();
+        setCategories(list.map((cat: string) => ({ id: cat, name: cat, parentId: null })));
+        return;
+      }
+    } catch (err) {
+      console.warn("Backend categories API failed, using local repository fallback:", err);
+    }
+
+    // Fallback
+    if (!isCsvLoaded) return;
+    const cats = productRepoRef.current.getCategories().map(cat => ({
+      id: cat,
+      name: cat,
+      parentId: null
+    }));
+    setCategories(cats);
+  };
+
+  // Fetch Catalog Products with dynamic parameters (Environment-based Paginated API)
+  const fetchCatalog = async () => {
+    try {
+      const page = Math.floor(paginationLimit / 48);
+      const queryParams = new URLSearchParams({
+        page: String(page),
+        limit: "48",
+        search: searchQuery || "",
+        category: selectedCategory || "",
+        subcategory: selectedSubcategory || "",
+        minPrice: priceMin || "",
+        maxPrice: priceMax || "",
+        sort: sortBy || "newest"
+      });
+
+      const res = await fetch(`${BACKEND_URL}/api/products?${queryParams.toString()}`);
+      if (res.ok) {
+        const result = await res.json();
+        if (result.success) {
+          if (page > 1) {
+            setProducts(prev => {
+              const existingIds = new Set(prev.map(p => p.id));
+              const newItems = (result.data.products || []).filter((p: any) => !existingIds.has(p.id));
+              return [...prev, ...newItems];
+            });
+          } else {
+            setProducts(result.data.products || []);
+          }
+          setTotalProductsCount(result.data.total || 0);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Backend products API failed, using local repository fallback:", err);
+    }
+
+    // Local fallback using ProductRepository (Development environment)
+    if (!isCsvLoaded) return;
+    const minPrice = parseFloat(priceMin) || 0;
+    const maxPrice = parseFloat(priceMax) || 0;
+    
+    const filtered = productRepoRef.current.queryProducts({
+      search: searchQuery,
+      category: selectedCategory || "ALL",
+      subcategory: selectedSubcategory || "ALL",
+      priceMin: minPrice,
+      priceMax: maxPrice,
+      sortBy
+    });
+    setProducts(filtered);
+    setTotalProductsCount(filtered.length);
+  };
+
+  // Fetch subcategories dynamically when selectedCategory changes
+  useEffect(() => {
+    const fetchSubcategoriesList = async () => {
+      if (!selectedCategory) {
+        setSubcategories([]);
+        return;
+      }
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/categories/${encodeURIComponent(selectedCategory)}/subcategories`);
+        if (res.ok) {
+          const list = await res.json();
+          setSubcategories(list);
+          return;
+        }
+      } catch (err) {
+        console.warn("Backend subcategories API failed, using local repository fallback:", err);
+      }
+
+      // Fallback
+      if (isCsvLoaded) {
+        setSubcategories(productRepoRef.current.getSubcategoriesForCategory(selectedCategory));
+      }
+    };
+    fetchSubcategoriesList();
+  }, [selectedCategory, isCsvLoaded]);
+
+  // Fetch Cart (persistent DB-backed)
+  const fetchCart = async (token: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/cart`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setCart(data.data);
+      }
+    } catch (e) {
+      console.error("Failed to load user cart:", e);
+    }
+  };
+
+  // Fetch Wishlist
+  const fetchWishlist = async (token: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/wishlist`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setWishlist(data.data);
+      }
+    } catch (e) {
+      console.error("Failed to load user wishlist:", e);
+    }
+  };
+
+  // Helper to find listing from products catalog
+  const findListing = (listingId: string) => {
+    for (const p of products) {
+      for (const v of p.variants) {
+        const matched = v.listings.find((l: any) => l.id === listingId);
+        if (matched) return { product: p, variant: v, listing: matched };
+      }
+    }
+    return null;
+  };
+
+  // Local fallback for Cart Additions
+  const localAddToCart = (listingId: string) => {
+    const found = findListing(listingId);
+    if (!found || !user) return;
+    
+    const existingIndex = cart.findIndex(item => item.sellerListing.id === listingId);
+    let updatedCart = [...cart];
+    if (existingIndex >= 0) {
+      updatedCart[existingIndex].quantity += 1;
+    } else {
+      updatedCart.push({
+        id: "cart-item-" + Math.random().toString(36).substring(2, 9),
+        userId: user.id || "local-user",
+        sellerListingId: listingId,
+        quantity: 1,
+        createdAt: new Date().toISOString(),
+        sellerListing: {
+          id: found.listing.id,
+          price: found.listing.price,
+          compareAtPrice: found.listing.compareAtPrice,
+          currency: found.listing.currency || "INR",
+          status: "ACTIVE",
+          createdAt: (found.listing as any).createdAt,
+          updatedAt: (found.listing as any).updatedAt,
+          seller: found.listing.seller,
+          productVariant: {
+            id: found.variant.id,
+            productId: found.product.id,
+            sku: found.variant.sku,
+            name: found.variant.name,
+            imageUrl: found.variant.imageUrl,
+            status: "ACTIVE",
+            product: {
+              id: found.product.id,
+              title: found.product.title,
+              description: found.product.description,
+              status: "ACTIVE",
+              productType: found.product.productType,
+              createdAt: (found.product as any).createdAt,
+              updatedAt: (found.product as any).updatedAt
+            }
+          }
+        }
+      } as any);
+    }
+    setCart(updatedCart);
+    localStorage.setItem(`nexus_cart_${user.email.toLowerCase()}`, JSON.stringify(updatedCart));
+    logUserAction(user.email, `Added to Cart: ${found.product.title} (${found.variant.name})`);
+  };
+
+  // Local fallback for Wishlist Additions
+  const localAddToWishlist = (listingId: string) => {
+    const found = findListing(listingId);
+    if (!found || !user) return;
+    
+    if (wishlist.some(item => item.sellerListing.id === listingId)) return;
+    
+    const updatedWishlist = [...wishlist, {
+      id: "wishlist-item-" + Math.random().toString(36).substring(2, 9),
+      userId: user.id || "local-user",
+      sellerListingId: listingId,
+      createdAt: new Date().toISOString(),
+      sellerListing: {
+        id: found.listing.id,
+        price: found.listing.price,
+        compareAtPrice: found.listing.compareAtPrice,
+        currency: found.listing.currency || "INR",
+        status: "ACTIVE",
+        createdAt: (found.listing as any).createdAt,
+        updatedAt: (found.listing as any).updatedAt,
+        seller: found.listing.seller,
+        productVariant: {
+          id: found.variant.id,
+          productId: found.product.id,
+          sku: found.variant.sku,
+          name: found.variant.name,
+          imageUrl: found.variant.imageUrl,
+          status: "ACTIVE",
+          product: {
+            id: found.product.id,
+            title: found.product.title,
+            description: found.product.description,
+            status: "ACTIVE",
+            productType: found.product.productType,
+            createdAt: (found.product as any).createdAt,
+            updatedAt: (found.product as any).updatedAt
+          }
+        }
+      }
+    } as any];
+    setWishlist(updatedWishlist);
+    localStorage.setItem(`nexus_wishlist_${user.email.toLowerCase()}`, JSON.stringify(updatedWishlist));
+    logUserAction(user.email, `Added to Wishlist: ${found.product.title} (${found.variant.name})`);
+  };
+
+  // Add Item to DB Cart
+  const handleAddToCart = async (listingId: string) => {
+    if (!accessToken) return;
+    if (accessToken.startsWith("simulated-firebase-token-")) {
+      localAddToCart(listingId);
+      setSuccessMsg("Item added to cart successfully!");
+      setTimeout(() => setSuccessMsg(null), 2000);
+      return;
+    }
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ sellerListingId: listingId, quantity: 1 }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMsg("Item added to cart successfully!");
+        fetchCart(accessToken);
+        const found = findListing(listingId);
+        if (found && user) {
+          logUserAction(user.email, `Added to Cart: ${found.product.title} (${found.variant.name})`);
+        }
+        setTimeout(() => setSuccessMsg(null), 2000);
+      } else {
+        throw new Error(data.error?.message || "Failed to add to cart");
+      }
+    } catch (e: any) {
+      console.warn("Backend add to cart failed, falling back to local storage:", e);
+      localAddToCart(listingId);
+      setSuccessMsg("Item added to cart successfully!");
+      setTimeout(() => setSuccessMsg(null), 2000);
+    }
+  };
+
+  // Add Item to DB Wishlist
+  const handleAddToWishlist = async (listingId: string) => {
+    if (!accessToken) return;
+    if (accessToken.startsWith("simulated-firebase-token-")) {
+      localAddToWishlist(listingId);
+      setSuccessMsg("Item added to wishlist!");
+      setTimeout(() => setSuccessMsg(null), 2000);
+      return;
+    }
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/wishlist`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ sellerListingId: listingId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMsg("Item added to wishlist!");
+        fetchWishlist(accessToken);
+        const found = findListing(listingId);
+        if (found && user) {
+          logUserAction(user.email, `Added to Wishlist: ${found.product.title} (${found.variant.name})`);
+        }
+        setTimeout(() => setSuccessMsg(null), 2000);
+      } else {
+        throw new Error(data.error?.message || "Failed to save to wishlist");
+      }
+    } catch (e: any) {
+      console.warn("Backend add to wishlist failed, falling back to local storage:", e);
+      localAddToWishlist(listingId);
+      setSuccessMsg("Item added to wishlist!");
+      setTimeout(() => setSuccessMsg(null), 2000);
+    }
+  };
+
+  // Mutate Quantity in DB Cart
+  const handleUpdateCartQuantity = async (listingId: string, currentQuantity: number, diff: number) => {
+    if (!accessToken) return;
+    const newQty = currentQuantity + diff;
+    if (newQty <= 0) {
+      handleRemoveFromCart(listingId);
+      return;
+    }
+    if (accessToken.startsWith("simulated-firebase-token-")) {
+      const updatedCart = cart.map(item => item.sellerListing.id === listingId ? { ...item, quantity: newQty } : item);
+      setCart(updatedCart);
+      localStorage.setItem(`nexus_cart_${user?.email.toLowerCase()}`, JSON.stringify(updatedCart));
+      return;
+    }
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ quantity: newQty }),
+      });
+      if (res.ok) {
+        fetchCart(accessToken);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Remove from DB Cart
+  const handleRemoveFromCart = async (listingId: string) => {
+    if (!accessToken) return;
+    if (accessToken.startsWith("simulated-firebase-token-")) {
+      const updatedCart = cart.filter(item => item.sellerListing.id !== listingId);
+      setCart(updatedCart);
+      localStorage.setItem(`nexus_cart_${user?.email.toLowerCase()}`, JSON.stringify(updatedCart));
+      return;
+    }
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (res.ok) {
+        fetchCart(accessToken);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Remove from DB Wishlist
+  const handleRemoveFromWishlist = async (listingId: string) => {
+    if (!accessToken) return;
+    if (accessToken.startsWith("simulated-firebase-token-")) {
+      const updatedWishlist = wishlist.filter(item => item.sellerListing.id !== listingId);
+      setWishlist(updatedWishlist);
+      localStorage.setItem(`nexus_wishlist_${user?.email.toLowerCase()}`, JSON.stringify(updatedWishlist));
+      return;
+    }
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/wishlist/${listingId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (res.ok) {
+        fetchWishlist(accessToken);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+
+  // Ingest external food item barcode search (Open Food Facts integration)
+  const handleIngestOFF = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!barcodeInput || !accessToken) return;
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/ingest`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ barcode: barcodeInput }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMsg("External item ingested successfully into catalog!");
+        setBarcodeInput("");
+        fetchCatalog();
+        setTimeout(() => setSuccessMsg(null), 3000);
+      } else {
+        throw new Error(data.message || "Ingestion failed");
+      }
+    } catch (e: any) {
+      setErrorMsg(e.message);
+      setTimeout(() => setErrorMsg(null), 4000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Submit Product Review
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProduct || !accessToken) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/reviews`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          productId: selectedProduct.id,
+          rating: reviewRating,
+          text: reviewText,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMsg("Review submitted! Thank you.");
+        setReviewText("");
+        // Reload details to sync reviews list
+        const updatedDetails = await fetch(`${BACKEND_URL}/api/v1/commerce/products/${selectedProduct.id}`);
+        const updatedDetailsJson = await updatedDetails.json();
+        if (updatedDetailsJson.success) {
+          setProductDetailsReviews(updatedDetailsJson.data.reviews);
+        }
+        setTimeout(() => setSuccessMsg(null), 3000);
+      } else {
+        throw new Error(data.error?.message || "Review submission failed.");
+      }
+    } catch (e: any) {
+      setErrorMsg(e.message);
+      setTimeout(() => setErrorMsg(null), 3000);
+    }
+  };
+
+  // Resolve Product Variant Images cleanly with fallback cache
+  const resolveProductImage = (prod: any, varId?: string): string => {
+    if (isCsvLoaded && !isProd) {
+      return productRepoRef.current.getProductImage(prod, varId);
+    }
+    const v = varId ? prod.variants?.find((x: any) => x.id === varId) : prod.variants?.[0];
+    if (v && v.imageUrl) return v.imageUrl;
+    return "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400";
+  };
+
+  // Load detailed Product information modal (Environment-aware Product Details lookup)
+  const openProductDetails = async (product: any) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/products/${product.id}`);
+      if (res.ok) {
+        const result = await res.json();
+        const prod = result.success ? result.data : result;
+        if (prod) {
+          setSelectedProduct(prod);
+          setProductDetailsReviews(prod.reviews || []);
+          if (prod.variants && prod.variants.length > 0) {
+            setSelectedVariant(prod.variants[0]);
+            if (prod.variants[0].listings && prod.variants[0].listings.length > 0) {
+              setSelectedListing(prod.variants[0].listings[0]);
+            } else {
+              setSelectedListing(null);
+            }
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Backend product details fetch failed, trying local fallback:", err);
+    }
+
+    // Local fallback
+    const repoProd = productRepoRef.current.getProductById(product.id);
+    if (repoProd) {
+      setSelectedProduct(repoProd as any);
+      setProductDetailsReviews([]);
+      if (repoProd.variants.length > 0) {
+        setSelectedVariant(repoProd.variants[0] as any);
+        if (repoProd.variants[0].listings.length > 0) {
+          setSelectedListing(repoProd.variants[0].listings[0] as any);
+        } else {
+          setSelectedListing(null);
+        }
+      }
+    }
+  };
+
+  // Switch product variant selections in modal
+  const selectVariant = (variant: ProductVariant) => {
+    setSelectedVariant(variant);
+    if (variant.listings.length > 0) {
+      setSelectedListing(variant.listings[0]);
+    } else {
+      setSelectedListing(null);
+    }
+  };
+
+  // Buy Now checkout handlers
+  const handleOpenBuyNow = (listing: any) => {
+    if (!user) return;
+    setBuyNowListing(listing);
+    setBuyNowName(user.name || "");
+    setBuyNowPhone(user.mobileNumber || "");
+    setBuyNowAddress(user.address || "");
+    setBuyNowPincode(user.pincode || "");
+    setBuyNowState(user.state || "");
+    setBuyNowCountry(user.country || "");
+    setBuyNowPin("");
+    setShowBuyNowConfirmation(true);
+  };
+
+  const handleBuyNowCheckout = async () => {
+    if (!buyNowListing || !user) return;
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      // 1. Validations
+      if (!buyNowName.trim() || !buyNowPhone.trim() || !buyNowAddress.trim() || !buyNowPincode.trim() || !buyNowState.trim() || !buyNowCountry.trim()) {
+        throw new Error("Please verify and fill all required address fields.");
+      }
+      if (buyNowPin !== "1234") {
+        throw new Error("Invalid Transaction PIN. Please enter '1234' to verify.");
+      }
+      if ((user.walletBalance ?? 0) < buyNowListing.price) {
+        throw new Error("Insufficient digital wallet balance to place order.");
+      }
+
+      // 2. Determine if simulated or real token
+      if (accessToken && accessToken.startsWith("simulated-firebase-token-")) {
+        // Simulated local checkout
+        const newBalance = Math.max(0, (user.walletBalance ?? 0) - buyNowListing.price);
+        const updatedUser = { ...user, walletBalance: newBalance };
+        setUser(updatedUser);
+        localStorage.setItem("nexus_logged_in_user", JSON.stringify(updatedUser));
+        firebaseMock.updateUserWallet(user.email, newBalance);
+
+        // Save order action log
+        logUserAction(user.email, `Order Placed: ${selectedProduct?.title} (${selectedVariant?.name}) - ₹${(buyNowListing.price / 100).toFixed(2)}`);
+        
+        // Log seller sale
+        try {
+          const sellerEmail = (buyNowListing.seller as any).user?.email || "seller@nexus.com";
+          logUserAction(sellerEmail, `Sale Recorded: Earned ₹${(buyNowListing.price * 0.90 / 100).toFixed(2)} from ${user.name}'s purchase of ${selectedProduct?.title}`);
+        } catch (_) {}
+
+        setSuccessMsg(`Order placed successfully! Wallet debited ₹${(buyNowListing.price / 100).toFixed(2)}.`);
+        setShowBuyNowConfirmation(false);
+        setSelectedProduct(null); // close product details modal
+      } else {
+        // Real backend checkout flow
+        const originalCart = [...cart];
+        
+        // Clear cart
+        for (const item of originalCart) {
+          await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${item.sellerListing.id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+        }
+        
+        // Add single item
+        const addRes = await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({ sellerListingId: buyNowListing.id, quantity: 1 })
+        });
+        
+        if (!addRes.ok) {
+          throw new Error("Failed to initialize Buy Now purchase context.");
+        }
+        
+        // Checkout
+        const idempotencyKey = crypto.randomUUID();
+        const checkRes = await fetch(`${BACKEND_URL}/api/v1/commerce/checkout`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({ paymentMethod: "INTERNAL_WALLET", idempotencyKey })
+        });
+        
+        const checkData = await checkRes.json();
+        if (!checkRes.ok || !checkData.success) {
+          throw new Error(checkData.error?.message || "Checkout failed");
+        }
+        
+        // Restore cart
+        for (const item of originalCart) {
+          await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({ sellerListingId: item.sellerListing.id, quantity: item.quantity })
+          });
+        }
+        
+        // Local state mutations
+        const newBalance = Math.max(0, (user.walletBalance ?? 0) - buyNowListing.price);
+        const updatedUser = { ...user, walletBalance: newBalance };
+        setUser(updatedUser);
+        localStorage.setItem("nexus_logged_in_user", JSON.stringify(updatedUser));
+        firebaseMock.updateUserWallet(user.email, newBalance);
+        
+        logUserAction(user.email, `Order Placed: ${selectedProduct?.title} (${selectedVariant?.name}) - ₹${(buyNowListing.price / 100).toFixed(2)}`);
+        
+        try {
+          const sellerEmail = (buyNowListing.seller as any).user?.email || "seller@nexus.com";
+          logUserAction(sellerEmail, `Sale Recorded: Earned ₹${(buyNowListing.price * 0.90 / 100).toFixed(2)} from ${user.name}'s purchase of ${selectedProduct?.title}`);
+        } catch (_) {}
+        
+        setSuccessMsg(`Order placed successfully! Wallet debited ₹${(buyNowListing.price / 100).toFixed(2)}.`);
+        setShowBuyNowConfirmation(false);
+        setSelectedProduct(null);
+        fetchCart(accessToken!);
+        fetchCatalog();
+      }
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      setErrorMsg(err.message);
+      setTimeout(() => setErrorMsg(null), 3000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Execute checkout SAGA
+  const handleCheckout = async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      const idempotencyKey = crypto.randomUUID();
+      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/checkout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          paymentMethod: "INTERNAL_WALLET",
+          idempotencyKey,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || "Checkout failed");
+      }
+
+      setSuccessMsg("Consolidated SAGA Order placed successfully! Wallet debited.");
+      setCart([]);
+      setShowCartDrawer(false);
+      setShowCheckoutConfirmation(false);
+      setActiveTab("home");
+      fetchCatalog(); // Refresh catalog stock counts
+      if (user) {
+        logUserAction(user.email, `Order Placed: Consolidated Cart Order - ₹${(cartTotalCents / 100).toFixed(2)}`);
+        // Log seller sales
+        for (const item of cart) {
+          try {
+            const sellerEmail = (item.sellerListing.seller as any).user?.email || "seller@nexus.com";
+            logUserAction(sellerEmail, `Sale Recorded: Earned ₹${(item.sellerListing.price * 0.90 * item.quantity / 100).toFixed(2)} from ${user.name}'s purchase of ${item.sellerListing.productVariant.product.title}`);
+          } catch (_) {}
+        }
+
+        const updatedUser = {
+          ...user,
+          walletBalance: Math.max(0, (user.walletBalance ?? 0) - cartTotalCents)
+        };
+        setUser(updatedUser);
+        localStorage.setItem("nexus_logged_in_user", JSON.stringify(updatedUser));
+        firebaseMock.updateUserWallet(user.email, updatedUser.walletBalance);
+      }
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      setErrorMsg(err.message);
+      setTimeout(() => setErrorMsg(null), 3000);
+    } finally {
+      setIsLoading(false);
+    }
+  };  // Session Handlers (using Firebase Authentication Simulation)
+  const handleLogin = async (emailInput: string, passwordInput: string) => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const res = await firebaseMock.signIn(emailInput, passwordInput, activeLoginRole);
+      if (res.success && res.user) {
+        setSuccessMsg(res.message);
+        const resolvedUser = {
+          walletBalance: 50000, // ₹500.00 default if not set
+          ...res.user,
+          id: res.user.uid,
+          activeRole: res.user.role,
+          roles: [res.user.role],
+        };
+        
+        let token = "simulated-firebase-token-" + res.user.uid;
+        
+        try {
+          const backendRes = await fetch(`${BACKEND_URL}/api/v1/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: emailInput, password: passwordInput })
+          });
+          const backendData = await backendRes.json();
+          if (backendRes.ok && backendData.success && backendData.data.accessToken) {
+            token = backendData.data.accessToken;
+            resolvedUser.id = backendData.data.user.id;
+            resolvedUser.walletBalance = backendData.data.user.walletBalance || resolvedUser.walletBalance;
+          }
+        } catch (backendErr) {
+          console.warn("Backend auth login failed/unavailable. Using mock token fallback:", backendErr);
+        }
+
+        setUser(resolvedUser as any);
+        setAccessToken(token);
+        setIsAuthenticated(true);
+        localStorage.setItem("nexus_access_token", token);
+        localStorage.setItem("nexus_logged_in_user", JSON.stringify(resolvedUser));
+
+        // Load local cart and wishlist state if any
+        const localCart = localStorage.getItem(`nexus_cart_${res.user.email.toLowerCase()}`);
+        if (localCart) {
+          setCart(JSON.parse(localCart));
+        } else {
+          setCart([]);
+        }
+        const localWishlist = localStorage.getItem(`nexus_wishlist_${res.user.email.toLowerCase()}`);
+        if (localWishlist) {
+          setWishlist(JSON.parse(localWishlist));
+        } else {
+          setWishlist([]);
+        }
+
+        
+        // Reset inputs
+        setLoginEmail("");
+        setLoginPassword("");
+        
+        // If Admin, load users list
+        if (res.user.role === "ADMIN") {
+          const list = await firebaseMock.getAllUsers(res.user.email);
+          setFirebaseUsersList(list);
+        }
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignUp = async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    // Profile Details payload
+    const details: Partial<FirebaseUserProfile> = {
+      name: regName,
+      mobileNumber: regMobile,
+    };
+
+    if (activeLoginRole === "CUSTOMER") {
+      details.age = regAge;
+      details.dob = regDob;
+      details.address = regAddress;
+      details.pincode = regPincode;
+      details.district = regDistrict;
+      details.state = regState;
+      details.country = regCountry;
+    } else if (activeLoginRole === "SELLER") {
+      details.businessName = regBusinessName;
+      details.location = regLocation;
+      details.businessType = regBusinessType;
+    }
+
+    // Validations
+    if (!regEmail || !regPassword) {
+      setErrorMsg("Email address and Password are required.");
+      setIsLoading(false);
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      setErrorMsg("Passwords do not match.");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const res = await firebaseMock.signUp(regEmail, regPassword, activeLoginRole, details);
+      if (res.success) {
+        // Sync registration with Nest backend
+        try {
+          await fetch(`${BACKEND_URL}/api/v1/auth/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: regEmail,
+              password: regPassword,
+              name: regName,
+              phone: regMobile
+            })
+          });
+        } catch (backendErr) {
+          console.warn("Backend auth registration failed/unavailable:", backendErr);
+        }
+
+        setSuccessMsg(res.message + " Please log in.");
+        setAuthMode("LOGIN");
+        // Clear registration fields
+        setRegName(""); setRegMobile(""); setRegEmail(""); setRegPassword(""); setRegConfirmPassword("");
+        setRegAge(""); setRegDob(""); setRegAddress(""); setRegPincode(""); setRegDistrict(""); setRegState(""); setRegCountry("");
+        setRegBusinessName(""); setRegLocation(""); setRegBusinessType("");
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSendResetCode = async () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    if (!forgotEmail) {
+      setErrorMsg("Please enter your email address.");
+      return;
+    }
+    try {
+      const res = await firebaseMock.sendResetCode(forgotEmail);
+      if (res.success) {
+        if (res.code) {
+          setSentCode(res.code);
+          setSuccessMsg(`Verification code generated: ${res.code} (Simulated Email Outbox)`);
+          setAuthMode("VERIFY_CODE");
+        } else {
+          setSuccessMsg(res.message);
+          setAuthMode("LOGIN");
+        }
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleVerifyAndResetPassword = async () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    if (!verificationCode) {
+      setErrorMsg("Please enter the verification code.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setErrorMsg("Passwords do not match.");
+      return;
+    }
+    try {
+      const res = await firebaseMock.verifyCodeAndResetPassword(forgotEmail, verificationCode, newPassword);
+      if (res.success) {
+        setSuccessMsg(res.message);
+        setAuthMode("LOGIN");
+        setForgotEmail("");
+        setVerificationCode("");
+        setNewPassword("");
+        setConfirmNewPassword("");
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || user.activeRole !== "ADMIN") return;
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const res = await firebaseMock.addAdmin(user.email, newAdminEmail, newAdminPass);
+      if (res.success) {
+        setSuccessMsg("Co-Administrator added successfully.");
+        setNewAdminEmail("");
+        setNewAdminPass("");
+        const list = await firebaseMock.getAllUsers(user.email);
+        setFirebaseUsersList(list);
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const handleRemoveFirebaseUser = async (uid: string) => {
+    if (!user || user.activeRole !== "ADMIN") return;
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const res = await firebaseMock.removeUser(user.email, uid);
+      if (res.success) {
+        setSuccessMsg(res.message);
+        const list = await firebaseMock.getAllUsers(user.email);
+        setFirebaseUsersList(list);
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem("nexus_access_token");
+    const storedUser = localStorage.getItem("nexus_logged_in_user");
+    if (storedToken && storedUser) {
+      setAccessToken(storedToken);
+      const parsedUser = JSON.parse(storedUser);
+      setUser(parsedUser);
+      setIsAuthenticated(true);
+      if (parsedUser.activeRole === "ADMIN") {
+        firebaseMock.getAllUsers(parsedUser.email).then(users => {
+          setFirebaseUsersList(users);
+        });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    setPaginationLimit(48);
+    fetchCatalog();
+  }, [isCsvLoaded, selectedCategory, selectedSubcategory, sortBy, searchQuery, priceMin, priceMax]);
+
+  const cartTotalCents = cart.reduce((acc, item) => acc + item.sellerListing.price * item.quantity, 0);
+  const cartItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+
+  return (
+    <div className="device-frame">
+      <div className="device-notch"></div>
+      <div className="home-indicator"></div>
+
+      <div className="app-container">
+        {/* Banner Alerts */}
+        {errorMsg && (
+          <div style={{
+            position: "absolute", top: 40, left: 16, right: 16,
+            background: "rgba(239, 68, 68, 0.95)", padding: "10px 14px",
+            borderRadius: "10px", fontSize: "12px", zIndex: 140,
+            backdropFilter: "blur(5px)", border: "1px solid rgba(255,255,255,0.1)",
+            display: "flex", alignItems: "center", gap: "8px"
+          }}>
+            <XCircle size={16} />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+        {successMsg && (
+          <div style={{
+            position: "absolute", top: 40, left: 16, right: 16,
+            background: "rgba(16, 185, 129, 0.95)", padding: "10px 14px",
+            borderRadius: "10px", fontSize: "12px", zIndex: 140,
+            backdropFilter: "blur(5px)", border: "1px solid rgba(255,255,255,0.1)",
+            display: "flex", alignItems: "center", gap: "8px"
+          }}>
+            <CheckCircle size={16} />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        {/* Header */}
+        <header style={{
+          padding: "16px", borderBottom: "1px solid var(--border)",
+          display: "flex", justifyContent: "space-between", alignItems: "center"
+        }}>
+          <div>
+            <h1 style={{ fontSize: "20px", background: "linear-gradient(to right, #8B5CF6, #10B981)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              NEXUS
+            </h1>
+            <p style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "1px" }}>
+              One App. Every Connection.
+            </p>
+          </div>
+          {isAuthenticated && (
+            <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
+              <button
+                onClick={() => setShowProfileModal(true)}
+                style={{ background: "none", border: "none", color: "#fff", cursor: "pointer" }}
+                title="View Profile"
+              >
+                <User size={18} />
+              </button>
+
+              <button
+                onClick={() => setShowWishlistDrawer(true)}
+                style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", position: "relative" }}
+              >
+                <Heart size={18} />
+                {wishlist.length > 0 && (
+                  <span style={{
+                    position: "absolute", top: "-6px", right: "-6px",
+                    background: "var(--error)", color: "#fff",
+                    borderRadius: "50%", padding: "1px 4px", fontSize: "8px", fontWeight: "700"
+                  }}>
+                    {wishlist.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setShowCartDrawer(true)}
+                style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", position: "relative" }}
+              >
+                <ShoppingBag size={18} />
+                {cartItemsCount > 0 && (
+                  <span style={{
+                    position: "absolute", top: "-6px", right: "-6px",
+                    background: "var(--primary)", color: "#fff",
+                    borderRadius: "50%", padding: "1px 4px", fontSize: "8px", fontWeight: "700"
+                  }}>
+                    {cartItemsCount}
+                  </span>
+                )}
+              </button>
+
+              <button onClick={() => {
+                localStorage.removeItem("nexus_access_token");
+                setAccessToken(null);
+                setUser(null);
+                setCart([]);
+                setWishlist([]);
+                setShowProfileModal(false);
+                setIsAuthenticated(false);
+              }} style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer" }}>
+                <LogOut size={18} />
+              </button>
+            </div>
+          )}
+        </header>        {/* Scroll Area */}
+        <div className="scroll-area">
+          {!isAuthenticated ? (
+            <LoginPage
+              authMode={authMode}
+              setAuthMode={setAuthMode}
+              activeLoginRole={activeLoginRole}
+              setActiveLoginRole={setActiveLoginRole}
+              loginEmail={loginEmail}
+              setLoginEmail={setLoginEmail}
+              loginPassword={loginPassword}
+              setLoginPassword={setLoginPassword}
+              regName={regName}
+              setRegName={setRegName}
+              regMobile={regMobile}
+              setRegMobile={setRegMobile}
+              regEmail={regEmail}
+              setRegEmail={setRegEmail}
+              regAge={regAge}
+              setRegAge={setRegAge}
+              regDob={regDob}
+              setRegDob={setRegDob}
+              regAddress={regAddress}
+              setRegAddress={setRegAddress}
+              regPincode={regPincode}
+              setRegPincode={setRegPincode}
+              regDistrict={regDistrict}
+              setRegDistrict={setRegDistrict}
+              regState={regState}
+              setRegState={setRegState}
+              regCountry={regCountry}
+              setRegCountry={setRegCountry}
+              regBusinessName={regBusinessName}
+              setRegBusinessName={setRegBusinessName}
+              regLocation={regLocation}
+              setRegLocation={setRegLocation}
+              regBusinessType={regBusinessType}
+              setRegBusinessType={setRegBusinessType}
+              regPassword={regPassword}
+              setRegPassword={setRegPassword}
+              regConfirmPassword={regConfirmPassword}
+              setRegConfirmPassword={setRegConfirmPassword}
+              forgotEmail={forgotEmail}
+              setForgotEmail={setForgotEmail}
+              verificationCode={verificationCode}
+              setVerificationCode={setVerificationCode}
+              newPassword={newPassword}
+              setNewPassword={setNewPassword}
+              confirmNewPassword={confirmNewPassword}
+              setConfirmNewPassword={setConfirmNewPassword}
+              isLoading={isLoading}
+              handleLogin={handleLogin}
+              handleSignUp={handleSignUp}
+              handleSendResetCode={handleSendResetCode}
+              handleVerifyAndResetPassword={handleVerifyAndResetPassword}
+            />
+          ) : (
+            <>
+              {/* If on home tab, render the role-specific portal home view */}
+              {activeTab === "home" && (
+                <>
+                  {user?.activeRole === "CUSTOMER" && (
+                    <CustomerPortal
+                      activeTab="home"
+                      setActiveTab={setActiveTab}
+                      user={user}
+                      categories={categories}
+                      selectedCategory={selectedCategory}
+                      setSelectedCategory={setSelectedCategory}
+                      selectedSubcategory={selectedSubcategory}
+                      setSelectedSubcategory={setSelectedSubcategory}
+                      subcategories={subcategories}
+                      searchQuery={searchQuery}
+                      setSearchQuery={setSearchQuery}
+                      sortBy={sortBy}
+                      setSortBy={setSortBy}
+                      priceMin={priceMin}
+                      setPriceMin={setPriceMin}
+                      priceMax={priceMax}
+                      setPriceMax={setPriceMax}
+                      products={products}
+                      displayedProducts={products.slice(0, paginationLimit)}
+                      totalProductsCount={totalProductsCount}
+                      displayedProductsCount={Math.min(products.length, paginationLimit)}
+                      loadMoreProducts={() => setPaginationLimit(prev => prev + 48)}
+                      onResetFilters={() => {
+                        setSelectedCategory("");
+                        setSelectedSubcategory("");
+                        setSearchQuery("");
+                        setSortBy("newest");
+                        setPriceMin("");
+                        setPriceMax("");
+                      }}
+                      getProductImage={resolveProductImage}
+                      registerImageFailure={(varId) => {
+                        if (isCsvLoaded && !isProd) {
+                          productRepoRef.current.registerImageFailure(varId);
+                        }
+                      }}
+                      validationStats={isProd ? null : productRepoRef.current.validationStats}
+                      isCsvLoaded={isCsvLoaded}
+                      csvLoadProgress={csvLoadProgress}
+                      openProductDetails={openProductDetails}
+                      barcodeInput={barcodeInput}
+                      setBarcodeInput={setBarcodeInput}
+                      handleIngestOFF={handleIngestOFF}
+                      isLoading={isLoading}
+                    />
+                  )}
+                  {user?.activeRole === "SELLER" && (
+                    <SellerPortal
+                      sellerTab={sellerTab}
+                      setSellerTab={setSellerTab}
+                      user={user}
+                      products={products}
+                      sellTitle={sellTitle}
+                      setSellTitle={setSellTitle}
+                      sellDescription={sellDescription}
+                      setSellDescription={setSellDescription}
+                      sellSku={sellSku}
+                      setSellSku={setSellSku}
+                      sellPrice={sellPrice}
+                      setSellPrice={setSellPrice}
+                      sellStock={sellStock}
+                      setSellStock={setSellStock}
+                      sellImageUrl={sellImageUrl}
+                      setSellImageUrl={setSellImageUrl}
+                      sellFolder={sellFolder}
+                      setSellFolder={setSellFolder}
+                      handleCloudinaryUpload={handleCloudinaryUpload}
+                      setErrorMsg={setErrorMsg}
+                      setSuccessMsg={setSuccessMsg}
+                    />
+                  )}
+                  {user?.activeRole === "ADMIN" && (
+                    <AdminPortal
+                      adminTab={adminTab}
+                      setAdminTab={setAdminTab}
+                      firebaseUsersList={firebaseUsersList}
+                      handleRemoveFirebaseUser={handleRemoveFirebaseUser}
+                      newAdminEmail={newAdminEmail}
+                      setNewAdminEmail={setNewAdminEmail}
+                      newAdminPass={newAdminPass}
+                      setNewAdminPass={setNewAdminPass}
+                      handleCreateAdmin={handleCreateAdmin}
+                    />
+                  )}
+                </>
+              )}
+
+              {/* If on any non-home tab, render the CustomerPortal's respective tab */}
+              {activeTab !== "home" && (
+                <CustomerPortal
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                  user={user}
+                  categories={categories}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                  selectedSubcategory={selectedSubcategory}
+                  setSelectedSubcategory={setSelectedSubcategory}
+                  subcategories={subcategories}
+                  searchQuery={searchQuery}
+                  setSearchQuery={setSearchQuery}
+                  sortBy={sortBy}
+                  setSortBy={setSortBy}
+                  priceMin={priceMin}
+                  setPriceMin={setPriceMin}
+                  priceMax={priceMax}
+                  setPriceMax={setPriceMax}
+                  products={products}
+                  displayedProducts={products.slice(0, paginationLimit)}
+                  totalProductsCount={totalProductsCount}
+                  displayedProductsCount={Math.min(products.length, paginationLimit)}
+                  loadMoreProducts={() => setPaginationLimit(prev => prev + 48)}
+                  onResetFilters={() => {
+                    setSelectedCategory("");
+                    setSelectedSubcategory("");
+                    setSearchQuery("");
+                    setSortBy("newest");
+                    setPriceMin("");
+                    setPriceMax("");
+                  }}
+                  getProductImage={resolveProductImage}
+                  registerImageFailure={(varId) => {
+                    if (isCsvLoaded && !isProd) {
+                      productRepoRef.current.registerImageFailure(varId);
+                    }
+                  }}
+                  validationStats={isProd ? null : productRepoRef.current.validationStats}
+                  isCsvLoaded={isCsvLoaded}
+                  csvLoadProgress={csvLoadProgress}
+                  openProductDetails={openProductDetails}
+                  barcodeInput={barcodeInput}
+                  setBarcodeInput={setBarcodeInput}
+                  handleIngestOFF={handleIngestOFF}
+                  isLoading={isLoading}
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Detailed Product Details Modal */}
+        {selectedProduct && (
+          <div style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(3, 2, 5, 0.98)", zIndex: 125, display: "flex",
+            flexDirection: "column", padding: "40px 16px 24px", overflowY: "auto"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Product Information</h3>
+              <button onClick={() => setSelectedProduct(null)} style={{ background: "none", border: "none", color: "#fff", fontSize: "18px", cursor: "pointer" }}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              {/* Image & Title */}
+              <div style={{ width: "100%", height: "180px", borderRadius: "12px", background: "var(--border)", overflow: "hidden" }}>
+                <img
+                  src={resolveProductImage(selectedProduct, selectedVariant?.id)}
+                  alt={selectedProduct.title}
+                  onError={() => {
+                    if (selectedVariant && isCsvLoaded && !isProd) {
+                      productRepoRef.current.registerImageFailure(selectedVariant.id);
+                    }
+                  }}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              </div>
+
+              <div>
+                <span style={{ fontSize: "10px", color: "var(--primary)", fontWeight: "600" }}>{selectedProduct.brand?.name || "Generic"}</span>
+                <h2 style={{ fontSize: "20px", fontWeight: "700", margin: "4px 0" }}>{selectedProduct.title}</h2>
+                <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{selectedProduct.description}</p>
+              </div>
+
+              {/* Variant Selectors */}
+              <div>
+                <h4 style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}>CHOOSE VARIANT</h4>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  {selectedProduct.variants.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => selectVariant(v)}
+                      className={selectedVariant?.id === v.id ? "btn-primary" : "btn-secondary"}
+                      style={{ padding: "6px 12px", fontSize: "11px", borderRadius: "16px" }}
+                    >
+                      {v.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Comparative Sellers Listings */}
+              <div>
+                <h4 style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}>COMPARE SELLERS</h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {selectedVariant?.listings.map((list) => (
+                    <div
+                      key={list.id}
+                      onClick={() => setSelectedListing(list)}
+                      className="glass-card"
+                      style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        cursor: "pointer", border: selectedListing?.id === list.id ? "1px solid var(--secondary)" : "1px solid var(--border)"
+                      }}
+                    >
+                      <div>
+                        <h5 style={{ fontSize: "12px", fontWeight: "600" }}>{list.seller.businessName}</h5>
+                        <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>Stock remaining: {list.inventory?.quantity ?? 0} units</span>
+                      </div>
+                      <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--secondary)" }}>₹{(list.price / 100).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  {selectedVariant?.listings.length === 0 && (
+                    <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>No sellers offering this variant currently.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Specifications Grid */}
+              {selectedVariant && (
+                <div style={{ borderTop: "1px solid var(--border)", paddingTop: "14px", marginTop: "4px" }}>
+                  <h4 style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px", textTransform: "uppercase" }}>SPECIFICATIONS</h4>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "11px", color: "var(--text-secondary)" }}>
+                    {selectedVariant.sku && <div>SKU: <strong style={{ color: "#fff" }}>{selectedVariant.sku}</strong></div>}
+                    {selectedVariant.dimensions && <div>Dimensions: <strong style={{ color: "#fff" }}>{selectedVariant.dimensions}</strong></div>}
+                    {selectedVariant.weight && <div>Weight: <strong style={{ color: "#fff" }}>{selectedVariant.weight}</strong></div>}
+                    {selectedVariant.material_composition && <div>Material: <strong style={{ color: "#fff" }}>{selectedVariant.material_composition}</strong></div>}
+                    {selectedVariant.country_of_origin && <div>Origin: <strong style={{ color: "#fff" }}>{selectedVariant.country_of_origin}</strong></div>}
+                    {selectedVariant.warranty_information && <div>Warranty: <strong style={{ color: "#fff" }}>{selectedVariant.warranty_information}</strong></div>}
+                    {selectedVariant.price_basis && <div>Price Basis: <strong style={{ color: "#fff" }}>{selectedVariant.price_basis}</strong></div>}
+                    {selectedVariant.source_dataset && <div>Source Dataset: <strong style={{ color: "#fff" }}>{selectedVariant.source_dataset}</strong></div>}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              {selectedListing && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px" }}>
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button className="btn-secondary" style={{ flex: 1 }} onClick={() => handleAddToWishlist(selectedListing.id)}>
+                      <Heart size={16} /> Wishlist
+                    </button>
+                    <button className="btn-primary" style={{ flex: 2 }} onClick={() => handleAddToCart(selectedListing.id)}>
+                      Add to Cart
+                    </button>
+                  </div>
+                  <button
+                    className="btn-primary"
+                    style={{ width: "100%", background: "linear-gradient(135deg, #10B981, #059669)", borderColor: "#10B981", fontWeight: "700" }}
+                    onClick={() => handleOpenBuyNow(selectedListing)}
+                  >
+                    ⚡ Buy Now
+                  </button>
+                </div>
+              )}
+
+              {/* Reviews & Submit */}
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "14px", marginTop: "10px" }}>
+                <h4 style={{ fontSize: "13px", fontWeight: "700", marginBottom: "8px" }}>Customer Reviews</h4>
+                
+                {/* Submit review */}
+                <form onSubmit={handleSubmitReview} style={{ marginBottom: "16px" }}>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "8px" }}>
+                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Rating:</span>
+                    <select
+                      className="text-input"
+                      value={reviewRating}
+                      onChange={(e) => setReviewRating(parseInt(e.target.value))}
+                      style={{ padding: "4px 8px", fontSize: "11px" }}
+                    >
+                      <option value={5}>5 Stars</option>
+                      <option value={4}>4 Stars</option>
+                      <option value={3}>3 Stars</option>
+                      <option value={2}>2 Stars</option>
+                      <option value={1}>1 Star</option>
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <input
+                      type="text"
+                      className="text-input"
+                      placeholder="Write your product review here..."
+                      value={reviewText}
+                      onChange={(e) => setReviewText(e.target.value)}
+                      style={{ flex: 1, padding: "8px 12px" }}
+                      required
+                    />
+                    <button type="submit" className="btn-primary" style={{ padding: "8px 12px" }}>
+                      Post
+                    </button>
+                  </div>
+                </form>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {productDetailsReviews.map((rev) => (
+                    <div key={rev.id} style={{ background: "var(--bg-surface-elevated)", border: "1px solid var(--border)", padding: "10px", borderRadius: "8px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "12px", fontWeight: "600" }}>{rev.user.name}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+                          <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                          <span style={{ fontSize: "10px" }}>{rev.rating}</span>
+                        </div>
+                      </div>
+                      <p style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "4px" }}>{rev.text}</p>
+                      {rev.verifiedPurchase && (
+                        <span style={{ fontSize: "8px", background: "rgba(16,185,129,0.15)", color: "var(--secondary)", padding: "2px 4px", borderRadius: "4px", display: "inline-block", marginTop: "4px" }}>
+                          Verified Purchase
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {productDetailsReviews.length === 0 && (
+                    <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>No reviews for this product yet.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Database-persisted Wishlist Drawer */}
+        {showWishlistDrawer && (
+          <div style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(3, 2, 5, 0.95)", zIndex: 120, display: "flex",
+            flexDirection: "column", padding: "40px 16px 24px"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3 style={{ fontSize: "18px" }}>Your Saved Wishlist</h3>
+              <button onClick={() => setShowWishlistDrawer(false)} style={{ background: "none", border: "none", color: "#fff", fontSize: "18px", cursor: "pointer" }}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "12px" }}>
+              {wishlist.length === 0 ? (
+                <p style={{ color: "var(--text-muted)", textAlign: "center", marginTop: "40px" }}>Your wishlist is empty.</p>
+              ) : (
+                wishlist.map((item) => (
+                  <div key={item.id} className="glass-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <h4 style={{ fontSize: "13px", fontWeight: "600" }}>{item.sellerListing.productVariant.product.title}</h4>
+                      <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{item.sellerListing.productVariant.name}</span>
+                      <span style={{ fontSize: "11px", color: "var(--secondary)", display: "block", marginTop: "2px" }}>₹{(item.sellerListing.price / 100).toFixed(2)}</span>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button className="btn-primary" style={{ padding: "4px 8px", fontSize: "10px" }}
+                        onClick={() => {
+                          handleAddToCart(item.sellerListing.id);
+                          handleRemoveFromWishlist(item.sellerListing.id);
+                        }}>
+                        Move to Cart
+                      </button>
+                      <button onClick={() => handleRemoveFromWishlist(item.sellerListing.id)} style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer" }}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Database-persisted Cart Drawer */}
+        {showCartDrawer && (
+          <div style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(3, 2, 5, 0.95)", zIndex: 120, display: "flex",
+            flexDirection: "column", padding: "40px 16px 24px"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3 style={{ fontSize: "18px" }}>Your Shopping Cart</h3>
+              <button onClick={() => setShowCartDrawer(false)} style={{ background: "none", border: "none", color: "#fff", fontSize: "18px", cursor: "pointer" }}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "12px" }}>
+              {cart.length === 0 ? (
+                <p style={{ color: "var(--text-muted)", textAlign: "center", marginTop: "40px" }}>Your cart is empty.</p>
+              ) : (
+                cart.map((item) => (
+                  <div key={item.id} className="glass-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ flex: 1 }}>
+                      <h4 style={{ fontSize: "13px", fontWeight: "600" }}>{item.sellerListing.productVariant.product.title}</h4>
+                      <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{item.sellerListing.productVariant.name}</span>
+                      <span style={{ fontSize: "11px", color: "var(--secondary)", display: "block", marginTop: "2px" }}>₹{(item.sellerListing.price / 100).toFixed(2)}</span>
+                      <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>Sold by: {item.sellerListing.seller.businessName}</span>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <button className="btn-secondary" style={{ padding: "2px 6px" }} onClick={() => handleUpdateCartQuantity(item.sellerListing.id, item.quantity, -1)}>-</button>
+                      <span style={{ fontSize: "12px" }}>{item.quantity}</span>
+                      <button className="btn-secondary" style={{ padding: "2px 6px" }} onClick={() => handleUpdateCartQuantity(item.sellerListing.id, item.quantity, 1)}>+</button>
+                      <button onClick={() => handleRemoveFromCart(item.sellerListing.id)} style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer", marginLeft: "4px" }}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {cart.length > 0 && (
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
+                  <span style={{ color: "var(--text-secondary)" }}>Total Amount</span>
+                  <span style={{ fontSize: "18px", fontWeight: "700", color: "var(--secondary)" }}>₹{(cartTotalCents / 100).toFixed(2)}</span>
+                </div>
+                <button className="btn-primary" style={{ width: "100%" }} onClick={() => setShowCheckoutConfirmation(true)}>
+                  Proceed to Checkout
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Checkout Confirmation Overlay */}
+        {showCheckoutConfirmation && (
+          <div style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(3, 2, 5, 0.98)", zIndex: 130, display: "flex",
+            alignItems: "center", justifyContent: "center", padding: "16px"
+          }}>
+            <div className="glass-card" style={{ width: "100%", maxWidth: "340px", textAlign: "center" }}>
+              <Lock size={32} color="var(--primary)" style={{ margin: "0 auto 12px" }} />
+              <h3 style={{ fontSize: "16px", marginBottom: "8px" }}>Confirm SAGA Payment</h3>
+              <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "16px" }}>
+                Total: <span style={{ color: "var(--secondary)", fontWeight: "700" }}>₹{(cartTotalCents / 100).toFixed(2)}</span> will be debited from your ledger wallet.
+              </p>
+
+              <div className="input-group">
+                <span className="input-label">TRANSACTION PIN</span>
+                <input type="password" placeholder="••••" maxLength={4} className="text-input" style={{ textAlign: "center", fontSize: "18px" }} value={checkoutPin} onChange={(e) => setCheckoutPin(e.target.value)} />
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
+                <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowCheckoutConfirmation(false)}>Cancel</button>
+                <button className="btn-primary" style={{ flex: 1 }} onClick={handleCheckout} disabled={isLoading}>
+                  {isLoading ? <RefreshCw className="animate-spin" size={16} /> : "Confirm"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Buy Now Confirmation Overlay */}
+        {showBuyNowConfirmation && buyNowListing && (
+          <div style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(3, 2, 5, 0.98)", zIndex: 130, display: "flex",
+            flexDirection: "column", padding: "40px 16px 24px", overflowY: "auto"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: "700" }}>Confirm Direct Purchase</h3>
+              <button onClick={() => setShowBuyNowConfirmation(false)} style={{ background: "none", border: "none", color: "#fff", fontSize: "18px", cursor: "pointer" }}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div className="glass-card" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+                <span style={{ fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Purchasing Product</span>
+                <h4 style={{ fontSize: "14px", fontWeight: "700", marginTop: "2px" }}>{selectedProduct?.title}</h4>
+                <p style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Variant: {selectedVariant?.name} | Price: <strong style={{ color: "var(--secondary)" }}>₹{(buyNowListing.price / 100).toFixed(2)}</strong></p>
+              </div>
+
+              <div className="glass-card" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <h4 style={{ fontSize: "12px", fontWeight: "700", borderBottom: "1px solid var(--border)", paddingBottom: "6px" }}>DELIVERY ADDRESS DETAILS</h4>
+                
+                <div className="input-group">
+                  <span className="input-label">CONTACT NAME</span>
+                  <input type="text" className="text-input" value={buyNowName} onChange={(e) => setBuyNowName(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <span className="input-label">CONTACT PHONE</span>
+                  <input type="text" className="text-input" value={buyNowPhone} onChange={(e) => setBuyNowPhone(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <span className="input-label">DELIVERY STREET ADDRESS</span>
+                  <input type="text" className="text-input" value={buyNowAddress} onChange={(e) => setBuyNowAddress(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <span className="input-label">PINCODE</span>
+                  <input type="text" className="text-input" value={buyNowPincode} onChange={(e) => setBuyNowPincode(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <span className="input-label">STATE / PROVINCE</span>
+                  <input type="text" className="text-input" value={buyNowState} onChange={(e) => setBuyNowState(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <span className="input-label">COUNTRY</span>
+                  <input type="text" className="text-input" value={buyNowCountry} onChange={(e) => setBuyNowCountry(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="glass-card" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <span className="input-label">TRANSACTION SECURITY PIN</span>
+                <input type="password" placeholder="••••" maxLength={4} className="text-input" style={{ textAlign: "center", fontSize: "18px" }} value={buyNowPin} onChange={(e) => setBuyNowPin(e.target.value)} />
+                <p style={{ fontSize: "9px", color: "var(--text-muted)", textAlign: "center" }}>Enter your 4-digit PIN (seeded default: 1234) to confirm ledger debit.</p>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowBuyNowConfirmation(false)}>Cancel</button>
+                <button className="btn-primary" style={{ flex: 1, background: "var(--secondary)" }} onClick={handleBuyNowCheckout} disabled={isLoading}>
+                  {isLoading ? <RefreshCw className="animate-spin" size={16} /> : "⚡ Place Order"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Profile Modal Overlay */}
+        {showProfileModal && user && (
+          <div style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(3, 2, 5, 0.98)", zIndex: 130, display: "flex",
+            flexDirection: "column", padding: "40px 16px 24px"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Account Profile</h3>
+              <button onClick={() => setShowProfileModal(false)} style={{ background: "none", border: "none", color: "#fff", fontSize: "18px", cursor: "pointer" }}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "16px", paddingBottom: "16px" }}>
+              {/* Profile Card Header */}
+              <div className="glass-card" style={{ display: "flex", alignItems: "center", gap: "12px", background: "linear-gradient(135deg, rgba(26,20,38,0.95), rgba(12,10,18,0.95))" }}>
+                <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "linear-gradient(135deg, var(--primary), var(--secondary))", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <User size={24} color="#fff" />
+                </div>
+                <div>
+                  <h4 style={{ fontSize: "16px", fontWeight: "700" }}>{user.name}</h4>
+                  <span style={{ fontSize: "10px", background: "rgba(167, 139, 250, 0.2)", color: "var(--primary)", padding: "2px 6px", borderRadius: "4px", fontWeight: "700" }}>
+                    {user.activeRole}
+                  </span>
+                </div>
+              </div>
+
+              {/* Wallet Ledger Info */}
+              <div className="glass-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <span style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>Ledger Balance</span>
+                  <h3 style={{ fontSize: "20px", fontWeight: "700", color: "var(--secondary)" }}>₹{((user.walletBalance ?? 0) / 100).toFixed(2)}</h3>
+                </div>
+                <Wallet size={24} color="var(--text-muted)" />
+              </div>
+
+              {/* Detail fields based on role */}
+              <div className="glass-card" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <h4 style={{ fontSize: "12px", fontWeight: "700", borderBottom: "1px solid var(--border)", paddingBottom: "6px" }}>PROFILE DETAILS</h4>
+                
+                <div>
+                  <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>EMAIL ADDRESS</span>
+                  <p style={{ fontSize: "13px", color: "#F3F4F6", fontWeight: "600" }}>{user.email}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>MOBILE / PHONE</span>
+                  <p style={{ fontSize: "13px", color: "#F3F4F6", fontWeight: "600" }}>{user.mobileNumber || "Not Set"}</p>
+                </div>
+
+                {user.activeRole === "CUSTOMER" && (
+                  <>
+                    {user.age && (
+                      <div>
+                        <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>AGE</span>
+                        <p style={{ fontSize: "13px", color: "#F3F4F6", fontWeight: "600" }}>{user.age} Years</p>
+                      </div>
+                    )}
+                    {user.dob && (
+                      <div>
+                        <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>DATE OF BIRTH</span>
+                        <p style={{ fontSize: "13px", color: "#F3F4F6", fontWeight: "600" }}>{user.dob}</p>
+                      </div>
+                    )}
+                    {user.address && (
+                      <div>
+                        <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>DELIVERY ADDRESS</span>
+                        <p style={{ fontSize: "13px", color: "#F3F4F6", fontWeight: "600", whiteSpace: "pre-line" }}>
+                          {user.address}
+                          {user.pincode && `\nPIN: ${user.pincode}`}
+                          {user.district && `\nDistrict: ${user.district}`}
+                          {user.state && `\nState: ${user.state}`}
+                          {user.country && `\nCountry: ${user.country}`}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {user.activeRole === "SELLER" && (
+                  <>
+                    <div>
+                      <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>BUSINESS / COMPANY NAME</span>
+                      <p style={{ fontSize: "13px", color: "#F3F4F6", fontWeight: "600" }}>{user.businessName || "Bob's Organic Market"}</p>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>BUSINESS TYPE</span>
+                      <p style={{ fontSize: "13px", color: "#F3F4F6", fontWeight: "600" }}>{user.businessType || "Retail Groceries"}</p>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>BUSINESS LOCATION</span>
+                      <p style={{ fontSize: "13px", color: "#F3F4F6", fontWeight: "600" }}>{user.location || "Indiranagar, Bengaluru"}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Actions Log / Order History */}
+              <div className="glass-card" style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1, minHeight: "150px" }}>
+                <h4 style={{ fontSize: "12px", fontWeight: "700", borderBottom: "1px solid var(--border)", paddingBottom: "6px" }}>
+                  {user.activeRole === "CUSTOMER" ? "ORDER & ACTIVITY HISTORY" : "PERFORMED ACTIONS LOG"}
+                </h4>
+                
+                <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {(() => {
+                    const key = `nexus_actions_${user.email.toLowerCase()}`;
+                    const raw = localStorage.getItem(key);
+                    const actions = raw ? JSON.parse(raw) : [];
+                    if (actions.length === 0) {
+                      return <p style={{ fontSize: "11px", color: "var(--text-muted)", textAlign: "center", marginTop: "20px" }}>No recent activity logged.</p>;
+                    }
+                    return actions.map((act: any) => (
+                      <div key={act.id} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", padding: "8px 10px", borderRadius: "8px" }}>
+                        <p style={{ fontSize: "11px", color: "#F3F4F6", fontWeight: "500", lineHeight: "1.4" }}>{act.text}</p>
+                        <span style={{ fontSize: "9px", color: "var(--text-muted)", display: "block", marginTop: "2px" }}>{act.timestamp}</span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bottom Navigation */}
+        {isAuthenticated && (
+          <nav style={{
+            display: "flex", justifyContent: "space-around", padding: "12px 6px",
+            borderTop: "1px solid var(--border)", background: "rgba(20, 18, 26, 0.95)",
+            backdropFilter: "blur(10px)", zIndex: 98
+          }}>
+            <button onClick={() => setActiveTab("home")} style={{ background: "none", border: "none", color: activeTab === "home" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+              <Home size={18} />
+              <span>Home</span>
+            </button>
+            {user?.activeRole !== "ADMIN" && (
+              <button onClick={() => setActiveTab("shop")} style={{ background: "none", border: "none", color: activeTab === "shop" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+                <ShoppingBag size={18} />
+                <span>Shop</span>
+              </button>
+            )}
+            <button onClick={() => setActiveTab("chat")} style={{ background: "none", border: "none", color: activeTab === "chat" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+              <MessageSquare size={18} />
+              <span>Chat</span>
+            </button>
+            <button onClick={() => setActiveTab("wallet")} style={{ background: "none", border: "none", color: activeTab === "wallet" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+              <Wallet size={18} />
+              <span>Wallet</span>
+            </button>
+            <button onClick={() => setActiveTab("services")} style={{ background: "none", border: "none", color: activeTab === "services" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+              <Grid size={18} />
+              <span>Services</span>
+            </button>
+          </nav>
+        )}
+      </div>
+    </div>
+  );
+}

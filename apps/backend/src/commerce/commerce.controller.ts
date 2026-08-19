@@ -1,0 +1,194 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { CommerceService } from "./commerce.service";
+import { AuthGuard } from "../auth/auth.guard";
+import { RolesGuard } from "../auth/roles.guard";
+import { Roles } from "../auth/roles.decorator";
+import { CurrentUser, UserPayload } from "../auth/current-user.decorator";
+import { UserRole } from "@nexus/shared";
+
+@Controller("api/v1/commerce")
+export class CommerceController {
+  constructor(private commerceService: CommerceService) {}
+
+  // Hierarchical Categories Lookup
+  @Get("categories")
+  async getCategories() {
+    const data = await this.commerceService.getCategories();
+    return { success: true, data };
+  }
+
+  // Catalog Browsing & Search Filters
+  @Get("products")
+  async getProducts(
+    @Query("categoryId") categoryId?: string,
+    @Query("brandId") brandId?: string,
+    @Query("search") search?: string,
+    @Query("priceMin") priceMin?: string,
+    @Query("priceMax") priceMax?: string,
+    @Query("ratingMin") ratingMin?: string,
+    @Query("sortBy") sortBy?: string,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ) {
+    const data = await this.commerceService.getProducts({
+      categoryId,
+      brandId,
+      search,
+      priceMin: priceMin ? parseInt(priceMin) : undefined,
+      priceMax: priceMax ? parseInt(priceMax) : undefined,
+      ratingMin: ratingMin ? parseFloat(ratingMin) : undefined,
+      sortBy,
+      page: page ? parseInt(page) : undefined,
+      limit: limit ? parseInt(limit) : undefined,
+    });
+    return { success: true, data };
+  }
+
+  // Detailed Product view (with variants & sellers listings comparisons)
+  @Get("products/:id")
+  async getProductDetails(@Param("id") id: string) {
+    const data = await this.commerceService.getProductDetails(id);
+    return { success: true, data };
+  }
+
+  // Persistent User Cart actions
+  @Get("cart")
+  @UseGuards(AuthGuard)
+  async getCart(@CurrentUser() user: UserPayload) {
+    const data = await this.commerceService.getCart(user.userId);
+    return { success: true, data };
+  }
+
+  @Post("cart/items")
+  @UseGuards(AuthGuard)
+  async addToCart(
+    @CurrentUser() user: UserPayload,
+    @Body("sellerListingId") sellerListingId: string,
+    @Body("quantity") quantity: number
+  ) {
+    const data = await this.commerceService.addToCart(user.userId, sellerListingId, quantity || 1);
+    return { success: true, data };
+  }
+
+  @Patch("cart/items/:listingId")
+  @UseGuards(AuthGuard)
+  async updateCartQuantity(
+    @CurrentUser() user: UserPayload,
+    @Param("listingId") listingId: string,
+    @Body("quantity") quantity: number
+  ) {
+    const data = await this.commerceService.updateCartQuantity(user.userId, listingId, quantity);
+    return { success: true, data };
+  }
+
+  @Delete("cart/items/:listingId")
+  @UseGuards(AuthGuard)
+  async removeFromCart(
+    @CurrentUser() user: UserPayload,
+    @Param("listingId") listingId: string
+  ) {
+    const data = await this.commerceService.removeFromCart(user.userId, listingId);
+    return { success: true, data };
+  }
+
+  // Persistent Wishlist actions
+  @Get("wishlist")
+  @UseGuards(AuthGuard)
+  async getWishlist(@CurrentUser() user: UserPayload) {
+    const data = await this.commerceService.getWishlist(user.userId);
+    return { success: true, data };
+  }
+
+  @Post("wishlist")
+  @UseGuards(AuthGuard)
+  async addToWishlist(
+    @CurrentUser() user: UserPayload,
+    @Body("sellerListingId") sellerListingId: string
+  ) {
+    const data = await this.commerceService.addToWishlist(user.userId, sellerListingId);
+    return { success: true, data };
+  }
+
+  @Delete("wishlist/:listingId")
+  @UseGuards(AuthGuard)
+  async removeFromWishlist(
+    @CurrentUser() user: UserPayload,
+    @Param("listingId") listingId: string
+  ) {
+    const data = await this.commerceService.removeFromWishlist(user.userId, listingId);
+    return { success: true, data };
+  }
+
+  // Verified reviews ratings submission
+  @Post("reviews")
+  @UseGuards(AuthGuard)
+  async addReview(
+    @CurrentUser() user: UserPayload,
+    @Body("productId") productId: string,
+    @Body("rating") rating: number,
+    @Body("text") text: string
+  ) {
+    const data = await this.commerceService.addReview(user.userId, productId, rating, text);
+    return { success: true, message: "Review submitted successfully.", data };
+  }
+
+  // External Ingestion trigger (Open Food Facts barcode lookup)
+  @Post("ingest")
+  @UseGuards(AuthGuard)
+  async ingestOFF(
+    @Body("barcode") barcode: string
+  ) {
+    const data = await this.commerceService.ingestOFF(barcode);
+    if (!data) {
+      return { success: false, message: "External item ingestion failed. Offline fallback applied." };
+    }
+    return { success: true, message: "External item ingested into NEXUS database catalog successfully.", data };
+  }
+
+  // Multi-seller Checkout saga
+  @Post("checkout")
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.CONSUMER)
+  async checkout(
+    @CurrentUser() user: UserPayload,
+    @Body() input: { idempotencyKey: string; paymentMethod: string }
+  ) {
+    const data = await this.commerceService.checkout(user.userId, input);
+    return { success: true, message: "Checkout executed successfully.", data };
+  }
+
+  // Admin Pending Products Moderation directory
+  @Get("admin/pending")
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async getPendingProducts() {
+    const data = await this.commerceService.getPendingProducts();
+    return { success: true, data };
+  }
+
+  @Post("admin/:id/approve")
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async approveProduct(@Param("id") id: string) {
+    const data = await this.commerceService.approveProduct(id);
+    return { success: true, message: "Product approved successfully.", data };
+  }
+
+  @Post("admin/:id/reject")
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async rejectProduct(@Param("id") id: string) {
+    const data = await this.commerceService.rejectProduct(id);
+    return { success: true, message: "Product rejected successfully.", data };
+  }
+}

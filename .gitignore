@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+/node_modules
+apps/*/node_modules
+packages/*/node_modules
+
+# Production/Build
+dist/
+/dist
+apps/*/dist
+packages/*/dist
+*.tsbuildinfo
+
+# Database
+nexus.db
+*.db
+*.db-journal
+
+# Env files
+.env
+.env.local
+.env.development.local
+.env.production.local
+.env.test.local
+
+# Logs
+*.log
+logs/
+
+# System Files
+.DS_Store
+Thumbs.db
