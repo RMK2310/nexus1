@@ -70,6 +70,153 @@ export const CheckoutInputSchema = z.object({
 
 export type CheckoutInput = z.infer<typeof CheckoutInputSchema>;
 
+// ── Commerce Mutation Validation Schemas ──
+
+// Add to Cart
+export const AddToCartInputSchema = z.object({
+  sellerListingId: z.string().min(1, { message: "Seller listing ID is required" }),
+  quantity: z.number().int().positive({ message: "Quantity must be a positive integer" }).default(1),
+});
+
+export type AddToCartInput = z.infer<typeof AddToCartInputSchema>;
+
+// Update Cart Item Quantity
+export const UpdateCartQuantityInputSchema = z.object({
+  quantity: z.number().int({ message: "Quantity must be an integer" }),
+});
+
+export type UpdateCartQuantityInput = z.infer<typeof UpdateCartQuantityInputSchema>;
+
+// Add to Wishlist
+export const AddToWishlistInputSchema = z.object({
+  sellerListingId: z.string().min(1, { message: "Seller listing ID is required" }),
+});
+
+export type AddToWishlistInput = z.infer<typeof AddToWishlistInputSchema>;
+
+// Product Review Submission
+export const AddReviewInputSchema = z.object({
+  productId: z.string().min(1, { message: "Product ID is required" }),
+  rating: z.number().int().min(1, { message: "Rating must be at least 1" }).max(5, { message: "Rating cannot exceed 5" }),
+  text: z.string().min(1, { message: "Review text is required" }).max(2000, { message: "Review text must be under 2000 characters" }),
+});
+
+export type AddReviewInput = z.infer<typeof AddReviewInputSchema>;
+
+// Server-side Checkout (uses persistent cart, not client-provided items)
+export const ServerCheckoutInputSchema = z.object({
+  idempotencyKey: z.string().min(1, { message: "Idempotency key is required" }),
+  paymentMethod: z.string().min(1, { message: "Payment method is required" }),
+});
+
+export type ServerCheckoutInput = z.infer<typeof ServerCheckoutInputSchema>;
+
+// Barcode Ingestion
+export const BarcodeIngestInputSchema = z.object({
+  barcode: z.string().min(3, { message: "Barcode must be at least 3 characters" }).max(50, { message: "Barcode must be under 50 characters" }),
+});
+
+export type BarcodeIngestInput = z.infer<typeof BarcodeIngestInputSchema>;
+
+// ── Wallet & Ledger Validation Schemas ──
+
+export const WalletTransferInputSchema = z.object({
+  recipient: z.string().min(1, { message: "Recipient email, phone, or User ID is required" }),
+  amount: z.number().positive({ message: "Transfer amount must be positive" }),
+  pin: z.string().length(4, { message: "Security PIN must be exactly 4 digits" }).regex(/^\d{4}$/, { message: "PIN must be numeric" }),
+  note: z.string().max(200, { message: "Note must be under 200 characters" }).optional(),
+});
+
+export type WalletTransferInput = z.infer<typeof WalletTransferInputSchema>;
+
+export const WalletTopUpInputSchema = z.object({
+  amount: z.number().positive({ message: "Top-up amount must be positive" }),
+  paymentMethod: z.string().min(1, { message: "Payment method is required" }).default("UPI"),
+});
+
+export type WalletTopUpInput = z.infer<typeof WalletTopUpInputSchema>;
+
+export const WalletSetPinInputSchema = z.object({
+  pin: z.string().length(4, { message: "New PIN must be exactly 4 digits" }).regex(/^\d{4}$/, { message: "PIN must be numeric" }),
+  currentPin: z.string().optional(),
+});
+
+export type WalletSetPinInput = z.infer<typeof WalletSetPinInputSchema>;
+
+export const WalletVerifyPinInputSchema = z.object({
+  pin: z.string().length(4, { message: "PIN must be exactly 4 digits" }).regex(/^\d{4}$/, { message: "PIN must be numeric" }),
+});
+
+export type WalletVerifyPinInput = z.infer<typeof WalletVerifyPinInputSchema>;
+
+// ── Razorpay Integration Validation Schemas ──
+
+export const RazorpayCreateOrderInputSchema = z.object({
+  amount: z.number().positive({ message: "Amount must be a positive number in INR" }),
+  currency: z.string().default("INR"),
+  notes: z.record(z.string()).optional(),
+});
+
+export type RazorpayCreateOrderInput = z.infer<typeof RazorpayCreateOrderInputSchema>;
+
+export const RazorpayVerifyPaymentInputSchema = z.object({
+  razorpay_order_id: z.string().min(1, { message: "Razorpay Order ID is required" }),
+  razorpay_payment_id: z.string().min(1, { message: "Razorpay Payment ID is required" }),
+  razorpay_signature: z.string().optional(),
+  amount: z.number().positive({ message: "Amount must be positive" }),
+  paymentMethod: z.string().default("CARD"),
+  paymentDetails: z.object({
+    cardNetwork: z.string().optional(),
+    last4: z.string().optional(),
+    bank: z.string().optional(),
+    vpa: z.string().optional(),
+  }).optional(),
+});
+
+export type RazorpayVerifyPaymentInput = z.infer<typeof RazorpayVerifyPaymentInputSchema>;
+
+// ── Razorpay E-Commerce Checkout Schemas ──
+
+export const RazorpayCommerceOrderInputSchema = z.object({
+  shippingAddress: z.object({
+    name: z.string().optional(),
+    phone: z.string().optional(),
+    address: z.string().optional(),
+    pincode: z.string().optional(),
+    state: z.string().optional(),
+    country: z.string().optional(),
+  }).optional(),
+  buyNow: z.object({
+    sellerListingId: z.string().min(1),
+    quantity: z.number().int().min(1).default(1),
+  }).optional(),
+});
+
+export type RazorpayCommerceOrderInput = z.infer<typeof RazorpayCommerceOrderInputSchema>;
+
+export const RazorpayCommerceVerifyInputSchema = z.object({
+  razorpay_order_id: z.string().min(1, { message: "Razorpay Order ID is required" }),
+  razorpay_payment_id: z.string().min(1, { message: "Razorpay Payment ID is required" }),
+  razorpay_signature: z.string().optional(),
+  amount: z.number().positive({ message: "Amount must be positive" }).optional(),
+  paymentMethod: z.string().default("CARD"),
+  paymentDetails: z.record(z.any()).optional(),
+  shippingAddress: z.object({
+    name: z.string().optional(),
+    phone: z.string().optional(),
+    address: z.string().optional(),
+    pincode: z.string().optional(),
+    state: z.string().optional(),
+    country: z.string().optional(),
+  }).optional(),
+  buyNow: z.object({
+    sellerListingId: z.string().min(1),
+    quantity: z.number().int().min(1).default(1),
+  }).optional(),
+});
+
+export type RazorpayCommerceVerifyInput = z.infer<typeof RazorpayCommerceVerifyInputSchema>;
+
 // Standard Error Response structure
 export interface ApiError {
   code: string;
@@ -83,3 +230,6 @@ export interface ApiResponse<T> {
   data?: T;
   error?: ApiError;
 }
+
+export { resolvePreciseProductImage, getOptimizedImageUrl, PRODUCT_IMAGE_RULES, type ImageRule } from "./product-images";
+

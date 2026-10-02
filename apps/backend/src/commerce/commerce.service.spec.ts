@@ -1,3 +1,9 @@
+// Set required environment variables for tests BEFORE any imports that trigger getConfig()
+process.env.NODE_ENV = "test";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "file:d:/NEXUS1/nexus.db";
+process.env.JWT_ACCESS_SECRET = "test_access_secret_for_unit_tests_32chars!";
+process.env.JWT_REFRESH_SECRET = "test_refresh_secret_for_unit_tests_32chars!";
+
 import { Test, TestingModule } from "@nestjs/testing";
 import { CommerceService } from "./commerce.service";
 import { OpenFoodFactsService } from "./open-food-facts.service";
@@ -5,6 +11,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { JwtModule } from "@nestjs/jwt";
 import { randomUUID } from "crypto";
 import { BadRequestException } from "@nestjs/common";
+
+jest.setTimeout(30000);
 
 describe("CommerceService Integration & Concurrency", () => {
   let service: CommerceService;

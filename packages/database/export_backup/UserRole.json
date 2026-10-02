@@ -1,0 +1,67 @@
+[
+  {
+    "id": "31104df2-51e8-460e-ab3f-5a5e6aa7dd13",
+    "userId": "3765811b-e7b3-40f5-938a-a634c5ec07ce",
+    "role": "ADMIN"
+  },
+  {
+    "id": "906fd83d-8e0b-4257-a9ca-84a1a31cf245",
+    "userId": "ff9cda06-4403-467a-bcb7-2dc9d205063e",
+    "role": "SELLER"
+  },
+  {
+    "id": "d3da43ef-f3ff-4bd6-be79-4af853022bd6",
+    "userId": "be969cc5-c733-4909-8d98-7a47ea4b7705",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "5b760f98-34c1-4f5f-ad56-d5cd049dfc33",
+    "userId": "d6425a4c-72d3-4b72-a09a-45c8caf6a6e5",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "ee7b158d-6f99-432f-a45a-87c8326887ce",
+    "userId": "51e4c7a5-3d97-4450-8dc0-75b5e698b012",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "0c7550d8-5e6a-43f2-b93d-349b86912312",
+    "userId": "8a9e6a47-c14d-422d-bba3-0c4c89cb2fce",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "73fb5158-5014-499f-a6a6-d16ce83410aa",
+    "userId": "7199e2b6-7b0f-4c90-b3ae-f30ebc4597b0",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "a1183d31-e353-45fb-8c33-7aa89e82e64d",
+    "userId": "b0a8b7a4-5b1e-40bd-9e32-85edf793d328",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "ddf24e3e-1217-4f55-8590-b6a128dc6402",
+    "userId": "9b77bfa6-c6fd-4dff-aa0c-31d9fcf22f12",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "30b0174f-7556-459b-b82a-8c106773b7cc",
+    "userId": "61c9cc58-61bb-4414-a0c8-eccced2da284",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "27e41fac-1cf6-44c4-aab4-2218e5f794a0",
+    "userId": "b46846ab-790e-44d2-8684-2b00ebe643dc",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "c3313c7c-41c7-4048-9361-7f5cf5a46bc3",
+    "userId": "cae4582e-db72-4cfe-82d8-bc5533781ac7",
+    "role": "CONSUMER"
+  },
+  {
+    "id": "ba1fd310-6b03-4fb3-9c26-d6ab6ad0ca55",
+    "userId": "4821755b-7af4-47d4-9e2d-44ef584e2b9d",
+    "role": "CONSUMER"
+  }
+]

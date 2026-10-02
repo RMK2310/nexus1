@@ -1,0 +1,29 @@
+[
+  {
+    "id": "6b00d725-4332-4259-b8ce-8cd3efbdb43d",
+    "orderId": "7a2de10d-0290-4139-9212-f47baa04143d",
+    "amount": 2000,
+    "status": "COMPLETED",
+    "idempotencyKey": "dad31960-cede-4106-8c2c-4093c1c2bfc6",
+    "provider": "INTERNAL_WALLET",
+    "createdAt": "2026-08-19T17:52:19.299Z"
+  },
+  {
+    "id": "56f34b70-567b-4bd6-871d-4ab43ad0e204",
+    "orderId": "6c67176a-8169-4132-975e-f439dac6f526",
+    "amount": 2000,
+    "status": "COMPLETED",
+    "idempotencyKey": "73253918-cf28-468a-bd35-eb876b373462",
+    "provider": "INTERNAL_WALLET",
+    "createdAt": "2026-08-19T17:52:19.326Z"
+  },
+  {
+    "id": "25c4559b-1994-42b6-b8f6-eaf03be9c6aa",
+    "orderId": "717a4dc7-832d-4fbc-98f7-3ed13983055b",
+    "amount": 2000,
+    "status": "COMPLETED",
+    "idempotencyKey": "4513ea57-6090-4d88-9044-5f228332eb62",
+    "provider": "INTERNAL_WALLET",
+    "createdAt": "2026-08-19T17:52:19.359Z"
+  }
+]

@@ -8,13 +8,33 @@ import {
   Param,
   Query,
   UseGuards,
+  UsePipes,
 } from "@nestjs/common";
 import { CommerceService } from "./commerce.service";
 import { AuthGuard } from "../auth/auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { CurrentUser, UserPayload } from "../auth/current-user.decorator";
-import { UserRole } from "@nexus/shared";
+import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
+import {
+  UserRole,
+  AddToCartInput,
+  AddToCartInputSchema,
+  UpdateCartQuantityInput,
+  UpdateCartQuantityInputSchema,
+  AddToWishlistInput,
+  AddToWishlistInputSchema,
+  AddReviewInput,
+  AddReviewInputSchema,
+  ServerCheckoutInput,
+  ServerCheckoutInputSchema,
+  BarcodeIngestInput,
+  BarcodeIngestInputSchema,
+  RazorpayCommerceOrderInput,
+  RazorpayCommerceOrderInputSchema,
+  RazorpayCommerceVerifyInput,
+  RazorpayCommerceVerifyInputSchema,
+} from "@nexus/shared";
 
 @Controller("api/v1/commerce")
 export class CommerceController {
@@ -71,23 +91,24 @@ export class CommerceController {
 
   @Post("cart/items")
   @UseGuards(AuthGuard)
+  @UsePipes(new ZodValidationPipe(AddToCartInputSchema))
   async addToCart(
     @CurrentUser() user: UserPayload,
-    @Body("sellerListingId") sellerListingId: string,
-    @Body("quantity") quantity: number
+    @Body() input: AddToCartInput
   ) {
-    const data = await this.commerceService.addToCart(user.userId, sellerListingId, quantity || 1);
+    const data = await this.commerceService.addToCart(user.userId, input.sellerListingId, input.quantity);
     return { success: true, data };
   }
 
   @Patch("cart/items/:listingId")
   @UseGuards(AuthGuard)
+  @UsePipes(new ZodValidationPipe(UpdateCartQuantityInputSchema))
   async updateCartQuantity(
     @CurrentUser() user: UserPayload,
     @Param("listingId") listingId: string,
-    @Body("quantity") quantity: number
+    @Body() input: UpdateCartQuantityInput
   ) {
-    const data = await this.commerceService.updateCartQuantity(user.userId, listingId, quantity);
+    const data = await this.commerceService.updateCartQuantity(user.userId, listingId, input.quantity);
     return { success: true, data };
   }
 
@@ -111,11 +132,12 @@ export class CommerceController {
 
   @Post("wishlist")
   @UseGuards(AuthGuard)
+  @UsePipes(new ZodValidationPipe(AddToWishlistInputSchema))
   async addToWishlist(
     @CurrentUser() user: UserPayload,
-    @Body("sellerListingId") sellerListingId: string
+    @Body() input: AddToWishlistInput
   ) {
-    const data = await this.commerceService.addToWishlist(user.userId, sellerListingId);
+    const data = await this.commerceService.addToWishlist(user.userId, input.sellerListingId);
     return { success: true, data };
   }
 
@@ -132,39 +154,66 @@ export class CommerceController {
   // Verified reviews ratings submission
   @Post("reviews")
   @UseGuards(AuthGuard)
+  @UsePipes(new ZodValidationPipe(AddReviewInputSchema))
   async addReview(
     @CurrentUser() user: UserPayload,
-    @Body("productId") productId: string,
-    @Body("rating") rating: number,
-    @Body("text") text: string
+    @Body() input: AddReviewInput
   ) {
-    const data = await this.commerceService.addReview(user.userId, productId, rating, text);
+    const data = await this.commerceService.addReview(user.userId, input.productId, input.rating, input.text);
     return { success: true, message: "Review submitted successfully.", data };
   }
 
   // External Ingestion trigger (Open Food Facts barcode lookup)
   @Post("ingest")
   @UseGuards(AuthGuard)
+  @UsePipes(new ZodValidationPipe(BarcodeIngestInputSchema))
   async ingestOFF(
-    @Body("barcode") barcode: string
+    @Body() input: BarcodeIngestInput
   ) {
-    const data = await this.commerceService.ingestOFF(barcode);
+    const data = await this.commerceService.ingestOFF(input.barcode);
     if (!data) {
       return { success: false, message: "External item ingestion failed. Offline fallback applied." };
     }
     return { success: true, message: "External item ingested into NEXUS database catalog successfully.", data };
   }
 
-  // Multi-seller Checkout saga
+  // Multi-seller Checkout saga (Direct Wallet)
   @Post("checkout")
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(UserRole.CONSUMER)
+  @UsePipes(new ZodValidationPipe(ServerCheckoutInputSchema))
   async checkout(
     @CurrentUser() user: UserPayload,
-    @Body() input: { idempotencyKey: string; paymentMethod: string }
+    @Body() input: ServerCheckoutInput
   ) {
     const data = await this.commerceService.checkout(user.userId, input);
     return { success: true, message: "Checkout executed successfully.", data };
+  }
+
+  // Razorpay Commerce Checkout - Create Order
+  @Post("checkout/razorpay/create-order")
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.CONSUMER)
+  @UsePipes(new ZodValidationPipe(RazorpayCommerceOrderInputSchema))
+  async createRazorpayCommerceOrder(
+    @CurrentUser() user: UserPayload,
+    @Body() input: RazorpayCommerceOrderInput
+  ) {
+    const data = await this.commerceService.createRazorpayCheckoutOrder(user.userId, input);
+    return { success: true, data };
+  }
+
+  // Razorpay Commerce Checkout - Verify Payment & Complete Order
+  @Post("checkout/razorpay/verify-payment")
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(UserRole.CONSUMER)
+  @UsePipes(new ZodValidationPipe(RazorpayCommerceVerifyInputSchema))
+  async verifyRazorpayCommercePayment(
+    @CurrentUser() user: UserPayload,
+    @Body() input: RazorpayCommerceVerifyInput
+  ) {
+    const data = await this.commerceService.verifyRazorpayCheckoutPayment(user.userId, input);
+    return { success: true, message: "Payment verified and order placed successfully.", data };
   }
 
   // Admin Pending Products Moderation directory

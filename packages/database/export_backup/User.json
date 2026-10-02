@@ -1,0 +1,119 @@
+[
+  {
+    "id": "3765811b-e7b3-40f5-938a-a634c5ec07ce",
+    "email": "admin-spec@nexus.com",
+    "passwordHash": "hash",
+    "name": "Admin Spec",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:18.847Z",
+    "updatedAt": "2026-08-19T17:52:18.847Z"
+  },
+  {
+    "id": "ff9cda06-4403-467a-bcb7-2dc9d205063e",
+    "email": "seller-spec@nexus.com",
+    "passwordHash": "hash",
+    "name": "Seller Spec",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:18.864Z",
+    "updatedAt": "2026-08-19T17:52:18.864Z"
+  },
+  {
+    "id": "be969cc5-c733-4909-8d98-7a47ea4b7705",
+    "email": "buyer-spec@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Spec",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:18.886Z",
+    "updatedAt": "2026-08-19T17:52:18.886Z"
+  },
+  {
+    "id": "d6425a4c-72d3-4b72-a09a-45c8caf6a6e5",
+    "email": "buyer-con-0@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 0",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:18.926Z",
+    "updatedAt": "2026-08-19T17:52:18.926Z"
+  },
+  {
+    "id": "51e4c7a5-3d97-4450-8dc0-75b5e698b012",
+    "email": "buyer-con-1@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 1",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:18.950Z",
+    "updatedAt": "2026-08-19T17:52:18.950Z"
+  },
+  {
+    "id": "8a9e6a47-c14d-422d-bba3-0c4c89cb2fce",
+    "email": "buyer-con-2@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 2",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:18.974Z",
+    "updatedAt": "2026-08-19T17:52:18.974Z"
+  },
+  {
+    "id": "7199e2b6-7b0f-4c90-b3ae-f30ebc4597b0",
+    "email": "buyer-con-3@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 3",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:19.001Z",
+    "updatedAt": "2026-08-19T17:52:19.001Z"
+  },
+  {
+    "id": "b0a8b7a4-5b1e-40bd-9e32-85edf793d328",
+    "email": "buyer-con-4@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 4",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:19.036Z",
+    "updatedAt": "2026-08-19T17:52:19.036Z"
+  },
+  {
+    "id": "9b77bfa6-c6fd-4dff-aa0c-31d9fcf22f12",
+    "email": "buyer-con-5@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 5",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:19.064Z",
+    "updatedAt": "2026-08-19T17:52:19.064Z"
+  },
+  {
+    "id": "61c9cc58-61bb-4414-a0c8-eccced2da284",
+    "email": "buyer-con-6@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 6",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:19.094Z",
+    "updatedAt": "2026-08-19T17:52:19.094Z"
+  },
+  {
+    "id": "b46846ab-790e-44d2-8684-2b00ebe643dc",
+    "email": "buyer-con-7@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 7",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:19.133Z",
+    "updatedAt": "2026-08-19T17:52:19.133Z"
+  },
+  {
+    "id": "cae4582e-db72-4cfe-82d8-bc5533781ac7",
+    "email": "buyer-con-8@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 8",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:19.165Z",
+    "updatedAt": "2026-08-19T17:52:19.165Z"
+  },
+  {
+    "id": "4821755b-7af4-47d4-9e2d-44ef584e2b9d",
+    "email": "buyer-con-9@nexus.com",
+    "passwordHash": "hash",
+    "name": "Buyer Con 9",
+    "phone": null,
+    "createdAt": "2026-08-19T17:52:19.201Z",
+    "updatedAt": "2026-08-19T17:52:19.201Z"
+  }
+]

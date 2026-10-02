@@ -1,0 +1,453 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// IDENTITY MODULE
+// ==========================================
+
+model User {
+  id           String             @id @default(uuid())
+  email        String             @unique
+  passwordHash String
+  name         String
+  phone        String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  roles        UserRole[]
+  sessions     Session[]
+  wallet       WalletAccount?
+  sellers      Seller[]
+  rides        Ride[]             @relation("PassengerRides")
+  driverRides  Ride[]             @relation("DriverRides")
+  restaurants  Restaurant[]
+  foodOrders   FoodOrder[]
+  orders       Order[]
+  auditLogs    AuditLog[]
+  deviceKeys   DeviceKey[]
+  memberOf     ConversationMember[]
+  paymentMethods PaymentMethod[]
+  wishlist     WishlistItem[]
+  cart         CartItem[]
+  reviews      ProductReview[]
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   String // CONSUMER, SELLER, ADMIN, RESTAURANT, DELIVERY_PARTNER, DRIVER, etc.
+
+  @@unique([userId, role])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @unique
+  deviceInfo   String?
+  expiresAt    DateTime
+  revoked      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model DeviceKey {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId       String
+  registrationId Int
+  identityKey    String
+  signedPreKey   String
+  preKeys        String   // JSON string of one-time prekeys
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, deviceId])
+}
+
+// ==========================================
+// COMMERCE MODULE
+// ==========================================
+
+model Seller {
+  id           String       @id @default(uuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName String
+  kycStatus    String       // PENDING, APPROVED, REJECTED
+  commissionRate Float      @default(0.10) // 10%
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  listings     SellerListing[]
+  subOrders    SubOrder[]
+
+  @@index([userId])
+}
+
+model Brand {
+  id       String    @id @default(uuid())
+  name     String    @unique
+  products Product[]
+}
+
+model Category {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  parentId  String?
+  parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
+  products  Product[]
+
+  @@index([parentId])
+}
+
+model Product {
+  id          String           @id @default(uuid())
+  title       String
+  description String
+  brandId     String?
+  brand       Brand?           @relation(fields: [brandId], references: [id])
+  categoryId  String
+  category    Category         @relation(fields: [categoryId], references: [id])
+  status      String           // ACTIVE, DRAFT, MODERATION
+  productType String           // PHYSICAL, DIGITAL, etc.
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  variants    ProductVariant[]
+  reviews     ProductReview[]
+
+  @@index([status, categoryId])
+  @@index([status, brandId])
+  @@index([status, createdAt])
+  @@index([categoryId])
+  @@index([brandId])
+}
+
+model ProductVariant {
+  id        String          @id @default(uuid())
+  productId String
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku       String          @unique
+  name      String          // e.g. "128GB Black", "1L Carton"
+  attributes String?        // Stringified JSON metadata
+  imageUrl  String?
+  status    String          @default("ACTIVE")
+  listings  SellerListing[]
+
+  @@index([productId])
+}
+
+model SellerListing {
+  id               String          @id @default(uuid())
+  productVariantId String
+  productVariant   ProductVariant  @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+  sellerId         String
+  seller           Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  price            Int             // In cents
+  compareAtPrice   Int?            // In cents
+  currency         String          @default("INR")
+  status           String          // ACTIVE, DRAFT, MODERATION
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  inventory        Inventory?
+  orderItems       OrderItem[]
+  wishlists        WishlistItem[]
+  cartItems        CartItem[]
+  flashSales       FlashSale[]
+  reservations     InventoryReservation[]
+
+  @@index([productVariantId, status])
+  @@index([sellerId])
+  @@index([status, price])
+}
+
+model Inventory {
+  id              String        @id @default(uuid())
+  sellerListingId String        @unique
+  sellerListing   SellerListing @relation(fields: [sellerListingId], references: [id], onDelete: Cascade)
+  quantity        Int
+  reservedQuantity Int          @default(0)
+  updatedAt       DateTime      @updatedAt
+}
+
+model InventoryReservation {
+  id              String        @id @default(uuid())
+  sellerListingId String
+  sellerListing   SellerListing @relation(fields: [sellerListingId], references: [id], onDelete: Cascade)
+  quantity        Int
+  expiresAt       DateTime
+  status          String        // PENDING, COMPLETED, EXPIRED
+  orderId         String?
+  createdAt       DateTime      @default(now())
+}
+
+model Order {
+  id          String     @id @default(uuid())
+  consumerId  String
+  user        User       @relation(fields: [consumerId], references: [id], onDelete: Cascade)
+  totalAmount Int        // In cents
+  status      String     // PLACED, PAID, COMPLETED, CANCELLED
+  paymentId   String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  subOrders   SubOrder[]
+
+  @@index([consumerId, status])
+  @@index([consumerId, createdAt])
+}
+
+model SubOrder {
+  id         String      @id @default(uuid())
+  orderId    String
+  order      Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sellerId   String
+  seller     Seller      @relation(fields: [sellerId], references: [id])
+  subTotal   Int         // In cents
+  commission Int         // In cents
+  status     String      // PLACED, SHIPPED, DELIVERED, CANCELLED
+  items      OrderItem[]
+}
+
+model OrderItem {
+  id              String        @id @default(uuid())
+  subOrderId      String
+  subOrder        SubOrder      @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
+  sellerListingId String
+  sellerListing   SellerListing @relation(fields: [sellerListingId], references: [id], onDelete: Cascade)
+  quantity        Int
+  price           Int           // In cents (at purchase time)
+}
+
+model CartItem {
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sellerListingId String
+  sellerListing   SellerListing @relation(fields: [sellerListingId], references: [id], onDelete: Cascade)
+  quantity        Int           @default(1)
+  createdAt       DateTime      @default(now())
+  @@unique([userId, sellerListingId])
+}
+
+model WishlistItem {
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sellerListingId String
+  sellerListing   SellerListing @relation(fields: [sellerListingId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  @@unique([userId, sellerListingId])
+}
+
+model ProductReview {
+  id               String   @id @default(uuid())
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating           Int
+  text             String
+  verifiedPurchase Boolean  @default(false)
+  status           String   @default("APPROVED")
+  createdAt        DateTime @default(now())
+
+  @@index([productId])
+  @@index([userId])
+}
+
+model InteractionEvent {
+  id        String   @id @default(uuid())
+  userId    String?
+  eventType String   // PRODUCT_VIEWED, PRODUCT_SEARCHED, etc.
+  productId String?
+  metadata  String?  // JSON string
+  createdAt DateTime @default(now())
+}
+
+model FlashSale {
+  id              String        @id @default(uuid())
+  sellerListingId String
+  sellerListing   SellerListing @relation(fields: [sellerListingId], references: [id], onDelete: Cascade)
+  salePrice       Int
+  startTime       DateTime
+  endTime         DateTime
+  maxQuantity     Int
+  status          String
+  createdAt       DateTime      @default(now())
+}
+
+// ==========================================
+// PAYMENTS & WALLET MODULE
+// ==========================================
+
+model WalletAccount {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance   Int      @default(0) // In cents, must remain positive or zero
+  currency  String   @default("INR")
+  pinHash   String?  // Scrypt-hashed 4-digit security PIN
+  updatedAt DateTime @updatedAt
+}
+
+model LedgerTransaction {
+  id          String        @id @default(uuid())
+  referenceId String        @unique
+  description String
+  createdAt   DateTime      @default(now())
+  entries     LedgerEntry[]
+}
+
+model LedgerEntry {
+  id            String            @id @default(uuid())
+  transactionId String
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  accountId     String            // Reference to WalletAccount.id
+  type          String            // DEBIT, CREDIT
+  amount        Int               // Positive value in cents
+}
+
+model PaymentMethod {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String   // WALLET, CARD, UPI
+  providerToken String?
+  last4         String?
+  createdAt     DateTime @default(now())
+}
+
+model PaymentAttempt {
+  id             String   @id @default(uuid())
+  orderId        String?
+  amount         Int
+  status         String   // PENDING, COMPLETED, FAILED, REFUNDED
+  idempotencyKey String   @unique
+  provider       String   // INTERNAL_WALLET, SANDBOX_GATEWAY
+  createdAt      DateTime @default(now())
+}
+
+model Refund {
+  id               String   @id @default(uuid())
+  paymentAttemptId String
+  amount           Int
+  status           String   // PENDING, COMPLETED, FAILED
+  reason           String
+  createdAt        DateTime @default(now())
+}
+
+// ==========================================
+// RIDE-HAILING & MOBILITY MODULE
+// ==========================================
+
+model Vehicle {
+  id          String   @id @default(uuid())
+  driverId    String   @unique
+  make        String
+  model       String
+  plateNumber String   @unique
+  createdAt   DateTime @default(now())
+}
+
+model Ride {
+  id           String   @id @default(uuid())
+  passengerId  String
+  passenger    User     @relation("PassengerRides", fields: [passengerId], references: [id], onDelete: Cascade)
+  driverId     String?
+  driver       User?    @relation("DriverRides", fields: [driverId], references: [id])
+  status       String   // REQUESTED, SEARCHING, DRIVER_ASSIGNED, TRIP_STARTED, TRIP_COMPLETED, CANCELLED
+  pickupLat    Float
+  pickupLng    Float
+  destLat      Float
+  destLng      Float
+  fare         Int      // In cents
+  otpCode      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ==========================================
+// FOOD DELIVERY MODULE
+// ==========================================
+
+model Restaurant {
+  id        String     @id @default(uuid())
+  ownerId   String
+  owner     User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String
+  cuisine   String
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  menus     MenuItem[]
+}
+
+model MenuItem {
+  id           String     @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  price        Int        // In cents
+  isAvailable  Boolean    @default(true)
+}
+
+model FoodOrder {
+  id                String      @id @default(uuid())
+  customerId        String
+  customer          User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurantId      String
+  status            String      // PLACED, PREPARING, OUT_FOR_DELIVERY, DELIVERED, CANCELLED
+  deliveryPartnerId String?
+  otpCode           String
+  totalAmount       Int         // In cents
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+// ==========================================
+// MESSAGING MODULE
+// ==========================================
+
+model Conversation {
+  id        String               @id @default(uuid())
+  name      String?
+  isGroup   Boolean              @default(false)
+  createdAt DateTime             @default(now())
+  members   ConversationMember[]
+}
+
+model ConversationMember {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("MEMBER") // OWNER, ADMIN, MEMBER
+  joinedAt       DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+}
+
+// ==========================================
+// SYSTEM PLATFORM MODULES
+// ==========================================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  resource  String
+  details   String   // JSON string representation
+  requestId String
+  ipAddress String?
+  createdAt DateTime @default(now())
+}

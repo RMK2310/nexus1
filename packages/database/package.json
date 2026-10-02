@@ -4,9 +4,12 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc && prisma generate",
+    "build": "tsc",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "db:export": "ts-node src/export-database.ts",
+    "db:import": "ts-node src/import-database.ts",
+    "db:audit": "ts-node src/integrity-check.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.2"

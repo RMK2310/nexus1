@@ -1,0 +1,177 @@
+{
+  "exportedAt": "2026-08-19T17:56:40.317Z",
+  "sourceDatabase": "file:d:/NEXUS1/nexus.db",
+  "totalTables": 34,
+  "tables": {
+    "User": {
+      "count": 13,
+      "checksum": "f1efa1b56c6cf67a592971479d12808f8e51173283fb4dceba449b5eace838bf",
+      "file": "User.json"
+    },
+    "UserRole": {
+      "count": 13,
+      "checksum": "bf92b6dc101dae673650766f88b43dfc0c3eb57bb32a7c9b7df06dba269ab64e",
+      "file": "UserRole.json"
+    },
+    "Session": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "Session.json"
+    },
+    "DeviceKey": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "DeviceKey.json"
+    },
+    "WalletAccount": {
+      "count": 13,
+      "checksum": "1eab70a58671d153adc02369cc51074b7349daee627d69f9254933b22170d264",
+      "file": "WalletAccount.json"
+    },
+    "Seller": {
+      "count": 1,
+      "checksum": "361882be571d3742bb1b9f2ba359f7f1a7436b14373850773f7b0655e4397504",
+      "file": "Seller.json"
+    },
+    "Brand": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "Brand.json"
+    },
+    "Category": {
+      "count": 1,
+      "checksum": "8c98419c7823b3429f6b169745c56d23ef3bbe4ae74e8c0bc42cf1bc68610c66",
+      "file": "Category.json"
+    },
+    "Product": {
+      "count": 1,
+      "checksum": "2476b41704d7fb30cd0278b92bfc1c88f32f2cd49afe28179612eaa2e5e2067c",
+      "file": "Product.json"
+    },
+    "ProductVariant": {
+      "count": 1,
+      "checksum": "2c19ff624ab343e89f92b8538dcc2383d2c4f05746362a01e34f3446c6a4158f",
+      "file": "ProductVariant.json"
+    },
+    "SellerListing": {
+      "count": 1,
+      "checksum": "553d98a07c180e3ebd0424355e62c65ec2d67aa34b5c5caff6bdcd5676500aac",
+      "file": "SellerListing.json"
+    },
+    "Inventory": {
+      "count": 1,
+      "checksum": "b84f910cb2dbfcfef820c11e9706eb35e4f0158a094af3c49ea8717fe9646d8b",
+      "file": "Inventory.json"
+    },
+    "InventoryReservation": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "InventoryReservation.json"
+    },
+    "Order": {
+      "count": 3,
+      "checksum": "3c8310081136808162d4f4334c67da97f901d08ea7ec547cc9ce1d19281d9a44",
+      "file": "Order.json"
+    },
+    "SubOrder": {
+      "count": 3,
+      "checksum": "b31275dc79a1d03ae21fdb71bb52df38b747cc72ebb4ef786e7d54220a642b16",
+      "file": "SubOrder.json"
+    },
+    "OrderItem": {
+      "count": 3,
+      "checksum": "3b68454a298e9c84cddf0a0ab45e18e5271d25e6004e1a48b0e72d72c775cf04",
+      "file": "OrderItem.json"
+    },
+    "CartItem": {
+      "count": 7,
+      "checksum": "333fc93600a9a1c00f2e92a857022d0ea906a3eb2a4085e63e63903149a12342",
+      "file": "CartItem.json"
+    },
+    "WishlistItem": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "WishlistItem.json"
+    },
+    "ProductReview": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "ProductReview.json"
+    },
+    "InteractionEvent": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "InteractionEvent.json"
+    },
+    "FlashSale": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "FlashSale.json"
+    },
+    "LedgerTransaction": {
+      "count": 24,
+      "checksum": "a0920b9f357e7f8f33ad0e402a07c4e2712c27e4eb03e6075fbdcdab11babde6",
+      "file": "LedgerTransaction.json"
+    },
+    "LedgerEntry": {
+      "count": 72,
+      "checksum": "b3916d6e5a430b0d55e320779ee1ae1fd9736f056c032f40146b7790cb7191c5",
+      "file": "LedgerEntry.json"
+    },
+    "PaymentMethod": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "PaymentMethod.json"
+    },
+    "PaymentAttempt": {
+      "count": 3,
+      "checksum": "b9bdbd6391bf1415048dee4110cef58123b1613afc1af7d21c8f22700f943629",
+      "file": "PaymentAttempt.json"
+    },
+    "Refund": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "Refund.json"
+    },
+    "Vehicle": {
+      "count": 1,
+      "checksum": "ec4ac134ba577a5d1c37a2dd6140df77302940cb78c538722703c0425228784a",
+      "file": "Vehicle.json"
+    },
+    "Ride": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "Ride.json"
+    },
+    "Restaurant": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "Restaurant.json"
+    },
+    "MenuItem": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "MenuItem.json"
+    },
+    "FoodOrder": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "FoodOrder.json"
+    },
+    "Conversation": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "Conversation.json"
+    },
+    "ConversationMember": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "ConversationMember.json"
+    },
+    "AuditLog": {
+      "count": 0,
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "file": "AuditLog.json"
+    }
+  }
+}

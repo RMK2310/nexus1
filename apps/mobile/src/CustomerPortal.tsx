@@ -21,11 +21,18 @@ import {
   XCircle,
   RotateCcw
 } from "lucide-react";
+import { resolvePreciseProductImage, getOptimizedImageUrl } from "@nexus/shared";
+import { WalletPortal } from "./WalletPortal";
 
 interface CustomerPortalProps {
   activeTab: "home" | "shop" | "chat" | "wallet" | "services";
   setActiveTab: (tab: "home" | "shop" | "chat" | "wallet" | "services") => void;
   user: any;
+  accessToken?: string | null;
+  backendUrl?: string;
+  onBalanceUpdate?: (newBalance: number) => void;
+  setGlobalSuccessMsg?: (msg: string) => void;
+  setGlobalErrorMsg?: (msg: string) => void;
   categories: any[];
   selectedCategory: string;
   setSelectedCategory: (c: string) => void;
@@ -66,6 +73,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   activeTab,
   setActiveTab,
   user,
+  accessToken,
+  backendUrl = "http://localhost:3000",
+  onBalanceUpdate,
+  setGlobalSuccessMsg,
+  setGlobalErrorMsg,
   categories,
   selectedCategory,
   setSelectedCategory,
@@ -330,21 +342,32 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                 ? Math.round(((comparePriceA - priceA) / comparePriceA) * 100)
                 : 0;
 
-              // Image Priority retrieval with safe error fallback handler
-              const activeImageUrl = getProductImage(prod);
+              // Image Priority retrieval with safe error fallback handler & CDN optimization
+              const activeImageUrl = getOptimizedImageUrl(getProductImage(prod));
 
               // Stock Status checks
-              const stock = prod.variants[0]?.stock_quantity ?? 0;
-              const availability = prod.variants[0]?.availability_status ?? "OUT_OF_STOCK";
+              const stock = prod.variants?.[0]?.listings?.[0]?.inventory?.quantity ?? prod.variants?.[0]?.stock_quantity ?? 50;
+              const availability = stock > 0 ? "IN_STOCK" : "OUT_OF_STOCK";
 
               return (
                 <div key={prod.id} className="product-card" style={{ display: "flex", flexDirection: "column" }}>
-                  <div style={{ position: "relative", width: "100%", height: "110px", background: "var(--border)", overflow: "hidden" }}>
+                  <div style={{ position: "relative", width: "100%", height: "110px", background: "#1f2937", overflow: "hidden" }}>
                     <img
                       src={activeImageUrl}
                       alt={prod.title}
-                      onError={() => registerImageFailure(prod.variants[0]?.id)}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      loading="lazy"
+                      decoding="async"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        target.onerror = () => {
+                          target.onerror = null;
+                          target.src = "/images/products/fruits.jpg";
+                        };
+                        const cat = prod.category?.name || "";
+                        const sub = (prod.category as any)?.parent?.name || cat;
+                        target.src = resolvePreciseProductImage(prod.title || "", cat, sub);
+                      }}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", transition: "opacity 0.2s ease-in" }}
                     />
                     {discount > 0 && (
                       <div style={{
@@ -441,22 +464,16 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
         </div>
       )}
 
-      {/* Wallet Tab */}
+      {/* Wallet Tab - Double-Entry Ledger, P2P Transfers & Statements */}
       {activeTab === "wallet" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <h2 style={{ fontSize: "18px" }}>Double-Entry Wallet</h2>
-          <div className="glass-card" style={{ background: "linear-gradient(135deg, #1f1b26, #14121a)" }}>
-            <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>SEED BALANCE</span>
-            <h2 style={{ fontSize: "28px", fontWeight: "800", color: "var(--secondary)" }}>₹{((user?.walletBalance ?? 0) / 100).toFixed(2)}</h2>
-            <div style={{ borderTop: "1px solid var(--border)", marginTop: "12px", paddingTop: "8px", fontSize: "11px", color: "var(--text-muted)" }}>
-              <span>User ID: {user?.id}</span>
-            </div>
-          </div>
-          <div className="glass-card" style={{ textAlign: "center", padding: "24px 16px", color: "var(--text-muted)" }}>
-            <Wallet size={32} style={{ margin: "0 auto 8px" }} />
-            <p style={{ fontSize: "12px" }}>P2P ledger transfers and pin validation interfaces unlock in Phase 3.</p>
-          </div>
-        </div>
+        <WalletPortal
+          user={user}
+          accessToken={accessToken}
+          backendUrl={backendUrl}
+          onBalanceUpdate={onBalanceUpdate}
+          setGlobalSuccessMsg={setGlobalSuccessMsg}
+          setGlobalErrorMsg={setGlobalErrorMsg}
+        />
       )}
 
       {/* Services Tab */}

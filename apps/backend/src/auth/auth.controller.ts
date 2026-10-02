@@ -8,6 +8,7 @@ import {
   UseGuards,
   UsePipes,
   Headers,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { AuthGuard } from "./auth.guard";
@@ -52,7 +53,7 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
 
     return {
@@ -60,6 +61,7 @@ export class AuthController {
       data: {
         user,
         accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       },
     };
   }
@@ -70,8 +72,12 @@ export class AuthController {
     @Body("refreshToken") bodyToken: string,
     @Res({ passthrough: true }) response: Response
   ) {
-    // Check cookie first, fallback to request body
-    const token = request.cookies?.refreshToken || bodyToken;
+    // Check body first, fallback to cookie
+    const token = bodyToken || request.cookies?.refreshToken;
+
+    if (!token) {
+      throw new UnauthorizedException("Refresh token not provided");
+    }
 
     const tokens = await this.authService.refresh(token);
 
@@ -79,13 +85,14 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
     return {
       success: true,
       data: {
         accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       },
     };
   }

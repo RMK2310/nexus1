@@ -1,0 +1,51 @@
+[
+  {
+    "id": "a78e88cd-0077-40c8-8275-99759f2c2813",
+    "userId": "51e4c7a5-3d97-4450-8dc0-75b5e698b012",
+    "sellerListingId": "4e2c34f0-d65e-4d46-b1dd-91cebb86a36c",
+    "quantity": 1,
+    "createdAt": "2026-08-19T17:52:18.968Z"
+  },
+  {
+    "id": "3ab53298-db85-439a-ae6c-79c1cd5fb601",
+    "userId": "8a9e6a47-c14d-422d-bba3-0c4c89cb2fce",
+    "sellerListingId": "4e2c34f0-d65e-4d46-b1dd-91cebb86a36c",
+    "quantity": 1,
+    "createdAt": "2026-08-19T17:52:18.994Z"
+  },
+  {
+    "id": "8f68ee80-e232-4111-9699-ba426baca70d",
+    "userId": "7199e2b6-7b0f-4c90-b3ae-f30ebc4597b0",
+    "sellerListingId": "4e2c34f0-d65e-4d46-b1dd-91cebb86a36c",
+    "quantity": 1,
+    "createdAt": "2026-08-19T17:52:19.029Z"
+  },
+  {
+    "id": "c387a78a-c2a8-4299-bf9b-5ee251aeb7b6",
+    "userId": "9b77bfa6-c6fd-4dff-aa0c-31d9fcf22f12",
+    "sellerListingId": "4e2c34f0-d65e-4d46-b1dd-91cebb86a36c",
+    "quantity": 1,
+    "createdAt": "2026-08-19T17:52:19.084Z"
+  },
+  {
+    "id": "063b7286-0400-42fa-9864-f49648ad74d1",
+    "userId": "61c9cc58-61bb-4414-a0c8-eccced2da284",
+    "sellerListingId": "4e2c34f0-d65e-4d46-b1dd-91cebb86a36c",
+    "quantity": 1,
+    "createdAt": "2026-08-19T17:52:19.123Z"
+  },
+  {
+    "id": "f452ae9a-1425-462b-93eb-5273d5986ef8",
+    "userId": "b46846ab-790e-44d2-8684-2b00ebe643dc",
+    "sellerListingId": "4e2c34f0-d65e-4d46-b1dd-91cebb86a36c",
+    "quantity": 1,
+    "createdAt": "2026-08-19T17:52:19.156Z"
+  },
+  {
+    "id": "d29f54d4-ab61-48f2-9a7c-1663313add49",
+    "userId": "cae4582e-db72-4cfe-82d8-bc5533781ac7",
+    "sellerListingId": "4e2c34f0-d65e-4d46-b1dd-91cebb86a36c",
+    "quantity": 1,
+    "createdAt": "2026-08-19T17:52:19.192Z"
+  }
+]

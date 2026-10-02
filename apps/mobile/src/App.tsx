@@ -5,6 +5,7 @@ import { CustomerPortal } from "./CustomerPortal";
 import { SellerPortal } from "./SellerPortal";
 import { AdminPortal } from "./AdminPortal";
 import { ProductRepository } from "./services/productRepository";
+import { RazorpayModal } from "./RazorpayModal";
 import {
   Home,
   ShoppingBag,
@@ -31,6 +32,14 @@ import {
   FileText,
   AlertCircle
 } from "lucide-react";
+import { resolvePreciseProductImage } from "@nexus/shared";
+import {
+  authFetch,
+  setAuthSession,
+  clearAuthSession,
+  validateSessionOnBoot,
+  BACKEND_URL as DEFAULT_BACKEND_URL
+} from "./services/apiClient";
 
 const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || (
   window.location.origin.includes("localhost")
@@ -38,8 +47,8 @@ const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || (
     : `${window.location.protocol}//${window.location.hostname}:3000`
 );
 
-const CLOUDINARY_CLOUD_NAME = "ddvwimzfr";
-const CLOUDINARY_UPLOAD_PRESET = "nexus_preset";
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "ddvwimzfr";
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "nexus_preset";
 
 interface UserProfile {
   id: string;
@@ -209,8 +218,10 @@ export default function App() {
   // Overlays
   const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [showWishlistDrawer, setShowWishlistDrawer] = useState(false);
-  const [showCheckoutConfirmation, setShowCheckoutConfirmation] = useState(false);
-  const [checkoutPin, setCheckoutPin] = useState("");
+  
+  // Razorpay Checkout State
+  const [showRazorpayCheckout, setShowRazorpayCheckout] = useState(false);
+  const [razorpayCheckoutType, setRazorpayCheckoutType] = useState<"CART" | "BUY_NOW">("CART");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
@@ -335,52 +346,70 @@ export default function App() {
   // Environment Flag
   const isProd = import.meta.env.PROD;
 
-  // Load CSV Catalog once on mount (Development fallback only)
+  // Initialize catalog and categories directly from Open Food Facts & Open Products Facts
+  // Initialize catalog and categories directly from backend with local repository fallback
   useEffect(() => {
-    if (isProd) {
-      setIsCsvLoaded(true);
-      return;
-    }
-
-    const loadCatalog = async () => {
-      try {
-        const res = await fetch("/NEXUS_MASTER_PRODUCT_CATALOG_COMBINED.csv");
-        if (!res.ok) throw new Error("Failed to load catalog CSV file.");
-        const text = await res.text();
-        setCsvLoadProgress("Parsing CSV catalog records...");
-        await productRepoRef.current.loadFromCsv(text);
-        setIsCsvLoaded(true);
-        
-        // Populate categories
-        const cats = productRepoRef.current.getCategories().map(cat => ({
-          id: cat,
-          name: cat,
-          parentId: null
-        }));
-        setCategories(cats);
-      } catch (err: any) {
-        console.error("Error loading master CSV catalog:", err);
-        setCsvLoadProgress("Error loading catalog.");
+    const initCatalog = async () => {
+      // 1. Instant optimistic restore from repository cache (0ms lag)
+      const initialCats = productRepoRef.current.getCategories();
+      if (initialCats.length > 0) {
+        setCategories(initialCats.map(c => ({ id: c, name: c, parentId: null })));
+        const initialProds = productRepoRef.current.queryProducts({
+          search: "",
+          category: "ALL",
+          subcategory: "ALL",
+          priceMin: 0,
+          priceMax: 0,
+          sortBy: "newest"
+        });
+        if (initialProds.length > 0) {
+          setProducts(initialProds);
+          setTotalProductsCount(initialProds.length);
+          setIsCsvLoaded(true);
+        }
       }
+
+      // 2. Fetch categories and catalog from backend directly
+      await fetchCategories();
+      await fetchCatalog();
+      setIsCsvLoaded(true);
+
+      // 3. Optional background sync with external Open Facts if repository empty
+      productRepoRef.current.loadLiveCatalog(BACKEND_URL).then(() => {
+        setIsCsvLoaded(true);
+      }).catch(() => {});
     };
-    loadCatalog();
+    initCatalog();
   }, []);
+
+  // Fetch catalog whenever search, category, subcategory, sort, price, or pagination changes
+  useEffect(() => {
+    fetchCatalog();
+  }, [searchQuery, selectedCategory, selectedSubcategory, sortBy, priceMin, priceMax, paginationLimit]);
 
   // Fetch Categories Hierarchy
   const fetchCategories = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/categories`);
       if (res.ok) {
-        const list = await res.json();
-        setCategories(list.map((cat: string) => ({ id: cat, name: cat, parentId: null })));
-        return;
+        const json = await res.json();
+        const list = Array.isArray(json)
+          ? json
+          : (Array.isArray(json.data) ? json.data : (json.data?.categories || []));
+        if (Array.isArray(list) && list.length > 0) {
+          setCategories(list.map((cat: any) => ({
+            id: typeof cat === "string" ? cat : cat.id || cat.name,
+            name: typeof cat === "string" ? cat : cat.name,
+            parentId: cat.parentId || null
+          })));
+          return;
+        }
       }
     } catch (err) {
       console.warn("Backend categories API failed, using local repository fallback:", err);
     }
 
     // Fallback
-    if (!isCsvLoaded) return;
     const cats = productRepoRef.current.getCategories().map(cat => ({
       id: cat,
       name: cat,
@@ -391,6 +420,25 @@ export default function App() {
 
   // Fetch Catalog Products with dynamic parameters (Environment-based Paginated API)
   const fetchCatalog = async () => {
+    const minPrice = parseFloat(priceMin) || 0;
+    const maxPrice = parseFloat(priceMax) || 0;
+
+    // 1. Instant optimistic local filtering (0ms latency for food section / category switching)
+    const localFiltered = productRepoRef.current.queryProducts({
+      search: searchQuery,
+      category: selectedCategory || "ALL",
+      subcategory: selectedSubcategory || "ALL",
+      priceMin,
+      priceMax,
+      sortBy
+    });
+
+    if (localFiltered.length > 0 && paginationLimit <= 48) {
+      setProducts(localFiltered);
+      setTotalProductsCount(localFiltered.length);
+    }
+
+    // 2. Background sync with backend API
     try {
       const page = Math.floor(paginationLimit / 48);
       const queryParams = new URLSearchParams({
@@ -408,72 +456,84 @@ export default function App() {
       if (res.ok) {
         const result = await res.json();
         if (result.success) {
-          if (page > 1) {
-            setProducts(prev => {
-              const existingIds = new Set(prev.map(p => p.id));
-              const newItems = (result.data.products || []).filter((p: any) => !existingIds.has(p.id));
-              return [...prev, ...newItems];
-            });
-          } else {
-            setProducts(result.data.products || []);
+          const prods = Array.isArray(result.data)
+            ? result.data
+            : (result.data?.products || []);
+          const total = typeof result.data?.total === "number"
+            ? result.data.total
+            : prods.length;
+
+          if (prods.length > 0) {
+            if (page > 1) {
+              setProducts(prev => {
+                const existingIds = new Set(prev.map(p => p.id));
+                const newItems = prods.filter((p: any) => !existingIds.has(p.id));
+                return [...prev, ...newItems];
+              });
+            } else {
+              setProducts(prods);
+            }
+            setTotalProductsCount(total);
+            setIsCsvLoaded(true);
+            return;
           }
-          setTotalProductsCount(result.data.total || 0);
-          return;
         }
       }
     } catch (err) {
       console.warn("Backend products API failed, using local repository fallback:", err);
     }
 
-    // Local fallback using ProductRepository (Development environment)
-    if (!isCsvLoaded) return;
-    const minPrice = parseFloat(priceMin) || 0;
-    const maxPrice = parseFloat(priceMax) || 0;
-    
-    const filtered = productRepoRef.current.queryProducts({
-      search: searchQuery,
-      category: selectedCategory || "ALL",
-      subcategory: selectedSubcategory || "ALL",
-      priceMin: minPrice,
-      priceMax: maxPrice,
-      sortBy
-    });
-    setProducts(filtered);
-    setTotalProductsCount(filtered.length);
+    if (localFiltered.length > 0) {
+      setProducts(localFiltered);
+      setTotalProductsCount(localFiltered.length);
+      setIsCsvLoaded(true);
+    }
   };
 
-  // Fetch subcategories dynamically when selectedCategory changes
+  // Fetch subcategories dynamically when selectedCategory changes (Instant 0ms + background sync)
   useEffect(() => {
     const fetchSubcategoriesList = async () => {
       if (!selectedCategory) {
         setSubcategories([]);
         return;
       }
+
+      // 1. Instant optimistic subcategories from local repository
+      const localSubs = productRepoRef.current.getSubcategoriesForCategory(selectedCategory);
+      if (localSubs.length > 0) {
+        setSubcategories(localSubs);
+      }
+
+      // 2. Background sync with backend
       try {
         const res = await fetch(`${BACKEND_URL}/api/categories/${encodeURIComponent(selectedCategory)}/subcategories`);
         if (res.ok) {
-          const list = await res.json();
-          setSubcategories(list);
-          return;
+          const json = await res.json();
+          const list = Array.isArray(json)
+            ? json
+            : (Array.isArray(json.data) ? json.data : []);
+          if (Array.isArray(list) && list.length > 0) {
+            setSubcategories(list.map((s: any) => typeof s === "string" ? s : s.name || s));
+            return;
+          }
         }
       } catch (err) {
         console.warn("Backend subcategories API failed, using local repository fallback:", err);
       }
 
-      // Fallback
-      if (isCsvLoaded) {
-        setSubcategories(productRepoRef.current.getSubcategoriesForCategory(selectedCategory));
+      if (localSubs.length > 0) {
+        setSubcategories(localSubs);
       }
     };
     fetchSubcategoriesList();
   }, [selectedCategory, isCsvLoaded]);
 
   // Fetch Cart (persistent DB-backed)
-  const fetchCart = async (token: string) => {
+  const fetchCart = async (token?: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/cart`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const activeToken = token || accessToken;
+      if (!activeToken) return;
+      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/cart`, {}, BACKEND_URL);
       const data = await res.json();
       if (res.ok && data.success) {
         setCart(data.data);
@@ -484,11 +544,11 @@ export default function App() {
   };
 
   // Fetch Wishlist
-  const fetchWishlist = async (token: string) => {
+  const fetchWishlist = async (token?: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/wishlist`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const activeToken = token || accessToken;
+      if (!activeToken) return;
+      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/wishlist`, {}, BACKEND_URL);
       const data = await res.json();
       if (res.ok && data.success) {
         setWishlist(data.data);
@@ -614,18 +674,17 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
+      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ sellerListingId: listingId, quantity: 1 }),
-      });
+      }, BACKEND_URL);
       const data = await res.json();
       if (res.ok && data.success) {
         setSuccessMsg("Item added to cart successfully!");
-        fetchCart(accessToken);
+        fetchCart();
         const found = findListing(listingId);
         if (found && user) {
           logUserAction(user.email, `Added to Cart: ${found.product.title} (${found.variant.name})`);
@@ -652,18 +711,17 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/wishlist`, {
+      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/wishlist`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ sellerListingId: listingId }),
-      });
+      }, BACKEND_URL);
       const data = await res.json();
       if (res.ok && data.success) {
         setSuccessMsg("Item added to wishlist!");
-        fetchWishlist(accessToken);
+        fetchWishlist();
         const found = findListing(listingId);
         if (found && user) {
           logUserAction(user.email, `Added to Wishlist: ${found.product.title} (${found.variant.name})`);
@@ -695,16 +753,15 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
+      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ quantity: newQty }),
-      });
+      }, BACKEND_URL);
       if (res.ok) {
-        fetchCart(accessToken);
+        fetchCart();
       }
     } catch (e) {
       console.error(e);
@@ -721,12 +778,11 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
+      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      }, BACKEND_URL);
       if (res.ok) {
-        fetchCart(accessToken);
+        fetchCart();
       }
     } catch (e) {
       console.error(e);
@@ -743,12 +799,11 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/wishlist/${listingId}`, {
+      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/wishlist/${listingId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      }, BACKEND_URL);
       if (res.ok) {
-        fetchWishlist(accessToken);
+        fetchWishlist();
       }
     } catch (e) {
       console.error(e);
@@ -763,14 +818,13 @@ export default function App() {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/ingest`, {
+      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/ingest`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ barcode: barcodeInput }),
-      });
+      }, BACKEND_URL);
       const data = await res.json();
       if (res.ok && data.success) {
         setSuccessMsg("External item ingested successfully into catalog!");
@@ -793,18 +847,17 @@ export default function App() {
     e.preventDefault();
     if (!selectedProduct || !accessToken) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/reviews`, {
+      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/reviews`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           productId: selectedProduct.id,
           rating: reviewRating,
           text: reviewText,
         }),
-      });
+      }, BACKEND_URL);
       const data = await res.json();
       if (res.ok && data.success) {
         setSuccessMsg("Review submitted! Thank you.");
@@ -825,14 +878,13 @@ export default function App() {
     }
   };
 
-  // Resolve Product Variant Images cleanly with fallback cache
+  // Resolve Product Variant Images cleanly with precision fallback
   const resolveProductImage = (prod: any, varId?: string): string => {
-    if (isCsvLoaded && !isProd) {
-      return productRepoRef.current.getProductImage(prod, varId);
-    }
+    if (!prod) return "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=500&auto=format&fit=crop&q=80";
     const v = varId ? prod.variants?.find((x: any) => x.id === varId) : prod.variants?.[0];
-    if (v && v.imageUrl) return v.imageUrl;
-    return "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400";
+    const catName = prod.category?.name || "";
+    const subcatName = (prod.category as any)?.parent?.name || catName;
+    return resolvePreciseProductImage(prod.title || "", catName, subcatName, v?.imageUrl);
   };
 
   // Load detailed Product information modal (Environment-aware Product Details lookup)
@@ -896,7 +948,6 @@ export default function App() {
     setBuyNowPincode(user.pincode || "");
     setBuyNowState(user.state || "");
     setBuyNowCountry(user.country || "");
-    setBuyNowPin("");
     setShowBuyNowConfirmation(true);
   };
 
@@ -905,113 +956,15 @@ export default function App() {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      // 1. Validations
       if (!buyNowName.trim() || !buyNowPhone.trim() || !buyNowAddress.trim() || !buyNowPincode.trim() || !buyNowState.trim() || !buyNowCountry.trim()) {
         throw new Error("Please verify and fill all required address fields.");
       }
-      if (buyNowPin !== "1234") {
-        throw new Error("Invalid Transaction PIN. Please enter '1234' to verify.");
-      }
-      if ((user.walletBalance ?? 0) < buyNowListing.price) {
-        throw new Error("Insufficient digital wallet balance to place order.");
-      }
 
-      // 2. Determine if simulated or real token
-      if (accessToken && accessToken.startsWith("simulated-firebase-token-")) {
-        // Simulated local checkout
-        const newBalance = Math.max(0, (user.walletBalance ?? 0) - buyNowListing.price);
-        const updatedUser = { ...user, walletBalance: newBalance };
-        setUser(updatedUser);
-        localStorage.setItem("nexus_logged_in_user", JSON.stringify(updatedUser));
-        firebaseMock.updateUserWallet(user.email, newBalance);
-
-        // Save order action log
-        logUserAction(user.email, `Order Placed: ${selectedProduct?.title} (${selectedVariant?.name}) - ₹${(buyNowListing.price / 100).toFixed(2)}`);
-        
-        // Log seller sale
-        try {
-          const sellerEmail = (buyNowListing.seller as any).user?.email || "seller@nexus.com";
-          logUserAction(sellerEmail, `Sale Recorded: Earned ₹${(buyNowListing.price * 0.90 / 100).toFixed(2)} from ${user.name}'s purchase of ${selectedProduct?.title}`);
-        } catch (_) {}
-
-        setSuccessMsg(`Order placed successfully! Wallet debited ₹${(buyNowListing.price / 100).toFixed(2)}.`);
-        setShowBuyNowConfirmation(false);
-        setSelectedProduct(null); // close product details modal
-      } else {
-        // Real backend checkout flow
-        const originalCart = [...cart];
-        
-        // Clear cart
-        for (const item of originalCart) {
-          await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${item.sellerListing.id}`, {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${accessToken}` }
-          });
-        }
-        
-        // Add single item
-        const addRes = await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`
-          },
-          body: JSON.stringify({ sellerListingId: buyNowListing.id, quantity: 1 })
-        });
-        
-        if (!addRes.ok) {
-          throw new Error("Failed to initialize Buy Now purchase context.");
-        }
-        
-        // Checkout
-        const idempotencyKey = crypto.randomUUID();
-        const checkRes = await fetch(`${BACKEND_URL}/api/v1/commerce/checkout`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`
-          },
-          body: JSON.stringify({ paymentMethod: "INTERNAL_WALLET", idempotencyKey })
-        });
-        
-        const checkData = await checkRes.json();
-        if (!checkRes.ok || !checkData.success) {
-          throw new Error(checkData.error?.message || "Checkout failed");
-        }
-        
-        // Restore cart
-        for (const item of originalCart) {
-          await fetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken}`
-            },
-            body: JSON.stringify({ sellerListingId: item.sellerListing.id, quantity: item.quantity })
-          });
-        }
-        
-        // Local state mutations
-        const newBalance = Math.max(0, (user.walletBalance ?? 0) - buyNowListing.price);
-        const updatedUser = { ...user, walletBalance: newBalance };
-        setUser(updatedUser);
-        localStorage.setItem("nexus_logged_in_user", JSON.stringify(updatedUser));
-        firebaseMock.updateUserWallet(user.email, newBalance);
-        
-        logUserAction(user.email, `Order Placed: ${selectedProduct?.title} (${selectedVariant?.name}) - ₹${(buyNowListing.price / 100).toFixed(2)}`);
-        
-        try {
-          const sellerEmail = (buyNowListing.seller as any).user?.email || "seller@nexus.com";
-          logUserAction(sellerEmail, `Sale Recorded: Earned ₹${(buyNowListing.price * 0.90 / 100).toFixed(2)} from ${user.name}'s purchase of ${selectedProduct?.title}`);
-        } catch (_) {}
-        
-        setSuccessMsg(`Order placed successfully! Wallet debited ₹${(buyNowListing.price / 100).toFixed(2)}.`);
-        setShowBuyNowConfirmation(false);
-        setSelectedProduct(null);
-        fetchCart(accessToken!);
-        fetchCatalog();
-      }
-      setTimeout(() => setSuccessMsg(null), 3000);
+      // Instead of doing direct internal checkout, we launch the Razorpay Checkout Modal
+      setRazorpayCheckoutType("BUY_NOW");
+      setShowRazorpayCheckout(true);
+      setShowBuyNowConfirmation(false);
+      
     } catch (err: any) {
       setErrorMsg(err.message);
       setTimeout(() => setErrorMsg(null), 3000);
@@ -1020,131 +973,126 @@ export default function App() {
     }
   };
 
-  // Execute checkout SAGA
   const handleCheckout = async () => {
     if (!accessToken) return;
-    setIsLoading(true);
-    setErrorMsg(null);
-    try {
-      const idempotencyKey = crypto.randomUUID();
-      const res = await fetch(`${BACKEND_URL}/api/v1/commerce/checkout`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          paymentMethod: "INTERNAL_WALLET",
-          idempotencyKey,
-        }),
-      });
+    setRazorpayCheckoutType("CART");
+    setShowRazorpayCheckout(true);
+    setShowCartDrawer(false);
+  };
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error?.message || "Checkout failed");
-      }
-
-      setSuccessMsg("Consolidated SAGA Order placed successfully! Wallet debited.");
-      setCart([]);
-      setShowCartDrawer(false);
-      setShowCheckoutConfirmation(false);
-      setActiveTab("home");
-      fetchCatalog(); // Refresh catalog stock counts
-      if (user) {
-        logUserAction(user.email, `Order Placed: Consolidated Cart Order - ₹${(cartTotalCents / 100).toFixed(2)}`);
-        // Log seller sales
-        for (const item of cart) {
-          try {
-            const sellerEmail = (item.sellerListing.seller as any).user?.email || "seller@nexus.com";
-            logUserAction(sellerEmail, `Sale Recorded: Earned ₹${(item.sellerListing.price * 0.90 * item.quantity / 100).toFixed(2)} from ${user.name}'s purchase of ${item.sellerListing.productVariant.product.title}`);
-          } catch (_) {}
-        }
-
-        const updatedUser = {
-          ...user,
-          walletBalance: Math.max(0, (user.walletBalance ?? 0) - cartTotalCents)
-        };
-        setUser(updatedUser);
-        localStorage.setItem("nexus_logged_in_user", JSON.stringify(updatedUser));
-        firebaseMock.updateUserWallet(user.email, updatedUser.walletBalance);
-      }
-      setTimeout(() => setSuccessMsg(null), 3000);
-    } catch (err: any) {
-      setErrorMsg(err.message);
-      setTimeout(() => setErrorMsg(null), 3000);
-    } finally {
-      setIsLoading(false);
+  const handleRazorpayCheckoutSuccess = (details: any) => {
+    setSuccessMsg(`Order placed successfully via ${details.paymentMethod}! Order Ref: ${details.orderId}`);
+    
+    // Update wallet balance if a new balance is provided by the backend response
+    if (user && details.newBalanceINR !== undefined) {
+      const newBalanceCents = Math.round(details.newBalanceINR * 100);
+      const updatedUser = { ...user, walletBalance: newBalanceCents };
+      setUser(updatedUser);
+      setAuthSession(accessToken, null, updatedUser);
+      firebaseMock.updateUserWallet(user.email, newBalanceCents);
     }
-  };  // Session Handlers (using Firebase Authentication Simulation)
+    
+    // Clear selections and refresh
+    if (razorpayCheckoutType === "CART") {
+      setCart([]);
+      fetchCart();
+    } else {
+      setSelectedProduct(null);
+    }
+    
+    setActiveTab("home");
+    fetchCatalog(); // Refresh catalog stock counts
+    setTimeout(() => setSuccessMsg(null), 4000);
+  };
+
+  // Session Handlers (using Firebase Authentication Simulation)
   const handleLogin = async (emailInput: string, passwordInput: string) => {
     setIsLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
     try {
-      const res = await firebaseMock.signIn(emailInput, passwordInput, activeLoginRole);
+      const email = emailInput.trim();
+      const password = passwordInput.trim();
+      let token: string | null = null;
+      let refreshToken: string | null = null;
+      let resolvedUser: any = null;
+
+      // 1. Prioritize real backend JWT authentication
+      try {
+        const backendRes = await fetch(`${BACKEND_URL}/api/v1/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password })
+        });
+        const backendData = await backendRes.json();
+        if (backendRes.ok && backendData.success && backendData.data?.accessToken) {
+          token = backendData.data.accessToken;
+          refreshToken = backendData.data.refreshToken || null;
+          resolvedUser = {
+            walletBalance: backendData.data.user.walletBalance ?? 50000,
+            ...backendData.data.user,
+            id: backendData.data.user.id,
+            activeRole: backendData.data.user.activeRole || activeLoginRole,
+            roles: backendData.data.user.roles || [activeLoginRole],
+          };
+        }
+      } catch (backendErr) {
+        console.warn("Backend auth login failed:", backendErr);
+      }
+
+      // 2. Firebase simulation sync & fallback
+      const res = await firebaseMock.signIn(email, password, activeLoginRole);
       if (res.success && res.user) {
-        setSuccessMsg(res.message);
-        const resolvedUser = {
-          walletBalance: 50000, // ₹500.00 default if not set
-          ...res.user,
-          id: res.user.uid,
-          activeRole: res.user.role,
-          roles: [res.user.role],
-        };
-        
-        let token = "simulated-firebase-token-" + res.user.uid;
-        
-        try {
-          const backendRes = await fetch(`${BACKEND_URL}/api/v1/auth/login`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: emailInput, password: passwordInput })
-          });
-          const backendData = await backendRes.json();
-          if (backendRes.ok && backendData.success && backendData.data.accessToken) {
-            token = backendData.data.accessToken;
-            resolvedUser.id = backendData.data.user.id;
-            resolvedUser.walletBalance = backendData.data.user.walletBalance || resolvedUser.walletBalance;
-          }
-        } catch (backendErr) {
-          console.warn("Backend auth login failed/unavailable. Using mock token fallback:", backendErr);
+        if (!resolvedUser || !token) {
+          resolvedUser = {
+            walletBalance: 50000,
+            ...res.user,
+            id: res.user.uid,
+            activeRole: res.user.role,
+            roles: [res.user.role],
+          };
+          token = "simulated-firebase-token-" + res.user.uid;
         }
 
         setUser(resolvedUser as any);
         setAccessToken(token);
         setIsAuthenticated(true);
-        localStorage.setItem("nexus_access_token", token);
-        localStorage.setItem("nexus_logged_in_user", JSON.stringify(resolvedUser));
+        setAuthSession(token, refreshToken, resolvedUser);
+        setSuccessMsg(res.message || "Logged in successfully!");
 
         // Load local cart and wishlist state if any
-        const localCart = localStorage.getItem(`nexus_cart_${res.user.email.toLowerCase()}`);
+        const localCart = localStorage.getItem(`nexus_cart_${email.toLowerCase()}`);
         if (localCart) {
           setCart(JSON.parse(localCart));
         } else {
           setCart([]);
         }
-        const localWishlist = localStorage.getItem(`nexus_wishlist_${res.user.email.toLowerCase()}`);
+        const localWishlist = localStorage.getItem(`nexus_wishlist_${email.toLowerCase()}`);
         if (localWishlist) {
           setWishlist(JSON.parse(localWishlist));
         } else {
           setWishlist([]);
         }
 
-        
+        // Fetch cart & wishlist with active token
+        fetchCart(token);
+        fetchWishlist(token);
+
         // Reset inputs
         setLoginEmail("");
         setLoginPassword("");
-        
+
         // If Admin, load users list
-        if (res.user.role === "ADMIN") {
-          const list = await firebaseMock.getAllUsers(res.user.email);
-          setFirebaseUsersList(list);
+        if (resolvedUser.activeRole === "ADMIN") {
+          firebaseMock.getAllUsers(email).then(users => {
+            setFirebaseUsersList(users);
+          });
         }
       } else {
-        setErrorMsg(res.message);
+        setErrorMsg(res.message || "Invalid credentials.");
       }
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || "Login failed.");
     } finally {
       setIsLoading(false);
     }
@@ -1316,19 +1264,51 @@ export default function App() {
   };
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("nexus_access_token");
-    const storedUser = localStorage.getItem("nexus_logged_in_user");
-    if (storedToken && storedUser) {
-      setAccessToken(storedToken);
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-      setIsAuthenticated(true);
-      if (parsedUser.activeRole === "ADMIN") {
-        firebaseMock.getAllUsers(parsedUser.email).then(users => {
-          setFirebaseUsersList(users);
-        });
+    const initSession = async () => {
+      const res = await validateSessionOnBoot(BACKEND_URL);
+      if (res.valid && res.user && res.accessToken) {
+        setAccessToken(res.accessToken);
+        setUser(res.user);
+        setIsAuthenticated(true);
+        fetchCart(res.accessToken);
+        fetchWishlist(res.accessToken);
+        if (res.user.activeRole === "ADMIN") {
+          firebaseMock.getAllUsers(res.user.email).then(users => {
+            setFirebaseUsersList(users);
+          });
+        }
+      } else {
+        setAccessToken(null);
+        setUser(null);
+        setIsAuthenticated(false);
       }
-    }
+    };
+
+    initSession();
+
+    const handleTokenRefreshed = (e: any) => {
+      if (e.detail?.accessToken) {
+        setAccessToken(e.detail.accessToken);
+      }
+    };
+
+    const handleSessionExpired = () => {
+      setAccessToken(null);
+      setUser(null);
+      setIsAuthenticated(false);
+      setCart([]);
+      setWishlist([]);
+      setErrorMsg("Session expired. Please log in again.");
+      setTimeout(() => setErrorMsg(null), 4000);
+    };
+
+    window.addEventListener("nexus_token_refreshed", handleTokenRefreshed);
+    window.addEventListener("nexus_session_expired", handleSessionExpired);
+
+    return () => {
+      window.removeEventListener("nexus_token_refreshed", handleTokenRefreshed);
+      window.removeEventListener("nexus_session_expired", handleSessionExpired);
+    };
   }, []);
 
   useEffect(() => {
@@ -1427,7 +1407,7 @@ export default function App() {
               </button>
 
               <button onClick={() => {
-                localStorage.removeItem("nexus_access_token");
+                clearAuthSession();
                 setAccessToken(null);
                 setUser(null);
                 setCart([]);
@@ -1505,6 +1485,13 @@ export default function App() {
                       activeTab="home"
                       setActiveTab={setActiveTab}
                       user={user}
+                      accessToken={accessToken}
+                      backendUrl={BACKEND_URL}
+                      onBalanceUpdate={(newBal) => {
+                        setUser(prev => prev ? { ...prev, walletBalance: newBal } : null);
+                      }}
+                      setGlobalSuccessMsg={setSuccessMsg}
+                      setGlobalErrorMsg={setErrorMsg}
                       categories={categories}
                       selectedCategory={selectedCategory}
                       setSelectedCategory={setSelectedCategory}
@@ -1595,6 +1582,13 @@ export default function App() {
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
                   user={user}
+                  accessToken={accessToken}
+                  backendUrl={BACKEND_URL}
+                  onBalanceUpdate={(newBal) => {
+                    setUser(prev => prev ? { ...prev, walletBalance: newBal } : null);
+                  }}
+                  setGlobalSuccessMsg={setSuccessMsg}
+                  setGlobalErrorMsg={setErrorMsg}
                   categories={categories}
                   selectedCategory={selectedCategory}
                   setSelectedCategory={setSelectedCategory}
@@ -1662,10 +1656,17 @@ export default function App() {
                 <img
                   src={resolveProductImage(selectedProduct, selectedVariant?.id)}
                   alt={selectedProduct.title}
-                  onError={() => {
-                    if (selectedVariant && isCsvLoaded && !isProd) {
-                      productRepoRef.current.registerImageFailure(selectedVariant.id);
-                    }
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    target.onerror = () => {
+                      target.onerror = null;
+                      target.src = "/images/products/fruits.jpg";
+                    };
+                    const cat = selectedProduct.category?.name || "";
+                    const sub = (selectedProduct.category as any)?.parent?.name || cat;
+                    target.src = resolvePreciseProductImage(selectedProduct.title || "", cat, sub);
                   }}
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 />
@@ -1914,40 +1915,11 @@ export default function App() {
                   <span style={{ color: "var(--text-secondary)" }}>Total Amount</span>
                   <span style={{ fontSize: "18px", fontWeight: "700", color: "var(--secondary)" }}>₹{(cartTotalCents / 100).toFixed(2)}</span>
                 </div>
-                <button className="btn-primary" style={{ width: "100%" }} onClick={() => setShowCheckoutConfirmation(true)}>
+                <button className="btn-primary" style={{ width: "100%" }} onClick={handleCheckout}>
                   Proceed to Checkout
                 </button>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Checkout Confirmation Overlay */}
-        {showCheckoutConfirmation && (
-          <div style={{
-            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-            background: "rgba(3, 2, 5, 0.98)", zIndex: 130, display: "flex",
-            alignItems: "center", justifyContent: "center", padding: "16px"
-          }}>
-            <div className="glass-card" style={{ width: "100%", maxWidth: "340px", textAlign: "center" }}>
-              <Lock size={32} color="var(--primary)" style={{ margin: "0 auto 12px" }} />
-              <h3 style={{ fontSize: "16px", marginBottom: "8px" }}>Confirm SAGA Payment</h3>
-              <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "16px" }}>
-                Total: <span style={{ color: "var(--secondary)", fontWeight: "700" }}>₹{(cartTotalCents / 100).toFixed(2)}</span> will be debited from your ledger wallet.
-              </p>
-
-              <div className="input-group">
-                <span className="input-label">TRANSACTION PIN</span>
-                <input type="password" placeholder="••••" maxLength={4} className="text-input" style={{ textAlign: "center", fontSize: "18px" }} value={checkoutPin} onChange={(e) => setCheckoutPin(e.target.value)} />
-              </div>
-
-              <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
-                <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowCheckoutConfirmation(false)}>Cancel</button>
-                <button className="btn-primary" style={{ flex: 1 }} onClick={handleCheckout} disabled={isLoading}>
-                  {isLoading ? <RefreshCw className="animate-spin" size={16} /> : "Confirm"}
-                </button>
-              </div>
-            </div>
           </div>
         )}
 
@@ -1999,23 +1971,42 @@ export default function App() {
                   <span className="input-label">COUNTRY</span>
                   <input type="text" className="text-input" value={buyNowCountry} onChange={(e) => setBuyNowCountry(e.target.value)} />
                 </div>
-              </div>
-
-              <div className="glass-card" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <span className="input-label">TRANSACTION SECURITY PIN</span>
-                <input type="password" placeholder="••••" maxLength={4} className="text-input" style={{ textAlign: "center", fontSize: "18px" }} value={buyNowPin} onChange={(e) => setBuyNowPin(e.target.value)} />
-                <p style={{ fontSize: "9px", color: "var(--text-muted)", textAlign: "center" }}>Enter your 4-digit PIN (seeded default: 1234) to confirm ledger debit.</p>
-              </div>
-
-              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
                 <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowBuyNowConfirmation(false)}>Cancel</button>
-                <button className="btn-primary" style={{ flex: 1, background: "var(--secondary)" }} onClick={handleBuyNowCheckout} disabled={isLoading}>
-                  {isLoading ? <RefreshCw className="animate-spin" size={16} /> : "⚡ Place Order"}
+                <button className="btn-primary" style={{ flex: 1 }} onClick={handleBuyNowCheckout} disabled={isLoading}>
+                  {isLoading ? <RefreshCw className="animate-spin" size={16} /> : "Proceed to Payment"}
                 </button>
+              </div>
               </div>
             </div>
           </div>
         )}
+
+        {/* Razorpay Modal for Checkout */}
+        <RazorpayModal
+          isOpen={showRazorpayCheckout}
+          onClose={() => setShowRazorpayCheckout(false)}
+          amount={razorpayCheckoutType === "CART" ? cartTotalCents / 100 : ((buyNowListing?.price || 0) / 100)}
+          user={user}
+          accessToken={accessToken}
+          backendUrl={BACKEND_URL}
+          paymentType="COMMERCE_CHECKOUT"
+          buyNow={razorpayCheckoutType === "BUY_NOW" && buyNowListing ? {
+            sellerListingId: buyNowListing.id,
+            quantity: 1
+          } : undefined}
+          shippingAddress={{
+            name: buyNowName,
+            phone: buyNowPhone,
+            address: buyNowAddress,
+            pincode: buyNowPincode,
+            state: buyNowState,
+            country: buyNowCountry
+          }}
+          purposeTitle={razorpayCheckoutType === "CART" ? "NEXUS Cart Checkout" : `Buy Now: ${selectedProduct?.title}`}
+          onPaymentSuccess={handleRazorpayCheckoutSuccess}
+          onPaymentFailure={(msg) => setErrorMsg(msg)}
+        />
 
         {/* Profile Modal Overlay */}
         {showProfileModal && user && (

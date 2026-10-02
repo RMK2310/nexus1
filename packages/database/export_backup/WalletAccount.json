@@ -1,0 +1,106 @@
+[
+  {
+    "id": "2047b928-5161-461b-bb0c-ab2308ee1bb9",
+    "userId": "3765811b-e7b3-40f5-938a-a634c5ec07ce",
+    "balance": 10600,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:19.357Z"
+  },
+  {
+    "id": "b18b4a69-9f5e-42d9-b881-37cad5c4ef1e",
+    "userId": "ff9cda06-4403-467a-bcb7-2dc9d205063e",
+    "balance": 5400,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:19.354Z"
+  },
+  {
+    "id": "5dec7bf7-e622-4932-8d08-36267aa4d95e",
+    "userId": "be969cc5-c733-4909-8d98-7a47ea4b7705",
+    "balance": 100000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:18.898Z"
+  },
+  {
+    "id": "52864190-a2de-42ba-95a5-41adcbc7adb7",
+    "userId": "d6425a4c-72d3-4b72-a09a-45c8caf6a6e5",
+    "balance": 8000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:18.937Z"
+  },
+  {
+    "id": "dddfc4cf-e30d-472e-9d73-9ff7c9b757a9",
+    "userId": "51e4c7a5-3d97-4450-8dc0-75b5e698b012",
+    "balance": 10000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:18.961Z"
+  },
+  {
+    "id": "9910a930-27df-4c82-bd11-9746c43e292b",
+    "userId": "8a9e6a47-c14d-422d-bba3-0c4c89cb2fce",
+    "balance": 10000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:18.986Z"
+  },
+  {
+    "id": "c07bd2b5-9fef-4667-bae3-db0c63767d69",
+    "userId": "7199e2b6-7b0f-4c90-b3ae-f30ebc4597b0",
+    "balance": 10000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:19.017Z"
+  },
+  {
+    "id": "6ccf3a28-637e-49ff-959e-bceaaea5c5fc",
+    "userId": "b0a8b7a4-5b1e-40bd-9e32-85edf793d328",
+    "balance": 8000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:19.051Z"
+  },
+  {
+    "id": "51dd3788-0840-4dd4-918b-28b9205e5754",
+    "userId": "9b77bfa6-c6fd-4dff-aa0c-31d9fcf22f12",
+    "balance": 10000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:19.076Z"
+  },
+  {
+    "id": "c39d7fa6-38fe-464b-838f-7799fa39f360",
+    "userId": "61c9cc58-61bb-4414-a0c8-eccced2da284",
+    "balance": 10000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:19.111Z"
+  },
+  {
+    "id": "1903ac8b-8a5c-4a7b-afe6-57c496712ffa",
+    "userId": "b46846ab-790e-44d2-8684-2b00ebe643dc",
+    "balance": 10000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:19.147Z"
+  },
+  {
+    "id": "74a11e98-399e-4cbf-9ea2-bc17fca143a6",
+    "userId": "cae4582e-db72-4cfe-82d8-bc5533781ac7",
+    "balance": 10000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:19.182Z"
+  },
+  {
+    "id": "f9e73cc2-6c6a-494f-9329-ccb5dfdc7612",
+    "userId": "4821755b-7af4-47d4-9e2d-44ef584e2b9d",
+    "balance": 8000,
+    "currency": "INR",
+    "pinHash": null,
+    "updatedAt": "2026-08-19T17:52:19.216Z"
+  }
+]

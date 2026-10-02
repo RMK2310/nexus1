@@ -1,9 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import { randomBytes, scrypt, randomUUID } from "crypto";
 import { promisify } from "util";
-import * as fs from "fs";
-import * as path from "path";
 import * as dotenv from "dotenv";
+import * as path from "path";
 
 dotenv.config({ path: path.join(__dirname, "../../../.env") });
 
@@ -16,123 +15,290 @@ async function hashPassword(password: string): Promise<string> {
   return `${buf.toString("hex")}.${salt}`;
 }
 
-function getProductImageUrl(category: string, subcategory: string, title: string): string {
-  const t = title.toLowerCase();
-  const cat = category.toLowerCase();
-  const sub = subcategory.toLowerCase();
-
-  // Fresh Fruits & Veggies
-  if (t.includes("apple")) return "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("banana")) return "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("orange")) return "https://images.unsplash.com/photo-1547514701-42782101795e?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("mango")) return "https://images.unsplash.com/photo-1553279768-865429fa0078?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("pomegranate")) return "https://images.unsplash.com/photo-1581249826359-a292634354c4?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("pineapple")) return "https://images.unsplash.com/photo-1550258987-190a2d41a8ba?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("pear")) return "https://images.unsplash.com/photo-1514756331096-242fdeb70d4a?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("grape")) return "https://images.unsplash.com/photo-1537640538966-79f369143f8f?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("strawberry")) return "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?w=400&auto=format&fit=crop&q=80";
-  
-  if (t.includes("carrot")) return "https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("potato")) return "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("onion")) return "https://images.unsplash.com/photo-1508747703725-719ae257c26a?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("tomato")) return "https://images.unsplash.com/photo-1595855759920-86582396756a?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("spinach")) return "https://images.unsplash.com/photo-1576045057995-568f588f82fb?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("broccoli")) return "https://images.unsplash.com/photo-1583209814683-c023de294402?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("peas")) return "https://images.unsplash.com/photo-1563565049-7ac45ebb2c81?w=400&auto=format&fit=crop&q=80";
-
-  // Dairy & Alternatives
-  if (t.includes("milk")) return "https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("cheese")) return "https://images.unsplash.com/photo-1486887396153-fa416525c108?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("yogurt")) return "https://images.unsplash.com/photo-1488477181946-6428a0291777?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("butter")) return "https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=400&auto=format&fit=crop&q=80";
-
-  // Bakery
-  if (t.includes("bread")) return "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("croissant")) return "https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("pastry") || t.includes("cake")) return "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("cookie")) return "https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("muffin")) return "https://images.unsplash.com/photo-1607958996333-41aef7caefaa?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("rusk")) return "https://images.unsplash.com/photo-1608686207856-001b95cf60ca?w=400&auto=format&fit=crop&q=80";
-
-  // Grains & Flours
-  if (t.includes("rice")) return "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("flour")) return "https://images.unsplash.com/photo-1517433367423-c7e5b0f35086?w=400&auto=format&fit=crop&q=80";
-  if (t.includes("baking mix") || t.includes("yeast") || t.includes("baking soda") || t.includes("baking powder")) {
-    return "https://images.unsplash.com/photo-1517433367423-c7e5b0f35086?w=400&auto=format&fit=crop&q=80";
-  }
-  if (t.includes("cereal") || t.includes("flakes") || t.includes("muesli") || t.includes("chocos")) {
-    return "https://images.unsplash.com/photo-1521485950395-bcfb507d729c?w=400&auto=format&fit=crop&q=80";
-  }
-
-  // Food fallback
-  if (cat.includes("food") || cat.includes("beverage") || cat.includes("grocery") || cat.includes("cereal")) {
-    return "https://images.unsplash.com/photo-1542838132-92c53300491e?w=400&auto=format&fit=crop&q=80";
-  }
-
-  // Electronics fallback
-  if (cat.includes("electronic") || cat.includes("device") || cat.includes("tech") || cat.includes("gadget")) {
-    if (t.includes("phone") || t.includes("iphone") || t.includes("pixel") || t.includes("galaxy")) return "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&auto=format&fit=crop&q=80";
-    if (t.includes("laptop") || t.includes("macbook")) return "https://images.unsplash.com/photo-1496181130204-755241544e35?w=400&auto=format&fit=crop&q=80";
-    if (t.includes("watch")) return "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?w=400&auto=format&fit=crop&q=80";
-    if (t.includes("headphones") || t.includes("earbuds")) return "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&auto=format&fit=crop&q=80";
-    return "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=400&auto=format&fit=crop&q=80";
-  }
-
-  return "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&auto=format&fit=crop&q=80";
+interface SeedProduct {
+  barcode: string;
+  title: string;
+  brand: string;
+  category: string;
+  subcategory: string;
+  description: string;
+  imageUrl: string;
+  productType: "GROCERIES" | "ELECTRONICS";
+  quantity: string;
+  price: number; // in INR rupees
+  compareAtPrice: number; // in INR rupees
+  rating: number;
+  reviewCount: number;
+  attributes: Record<string, any>;
 }
 
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuotes = false;
+function isValidEnglishName(name: string | undefined): boolean {
+  if (!name || typeof name !== "string") return false;
+  const trimmed = name.trim();
+  if (trimmed.length < 3 || trimmed.length > 150) return false;
+  const hasLatin = /[a-zA-Z]/.test(trimmed);
+  const hasNonAscii = /[^\x20-\x7E]/.test(trimmed);
+  return hasLatin && !hasNonAscii;
+}
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (char === "," && !inQuotes) {
-      result.push(current.trim());
-      current = "";
-    } else {
-      current += char;
+function cleanTitle(name: string): string {
+  return name.replace(/\s+/g, " ").trim();
+}
+
+function generateINRPrice(seedStr: string, isElectronics: boolean): { price: number; comparePrice: number } {
+  let hash = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash = (hash << 5) - hash + seedStr.charCodeAt(i);
+    hash |= 0;
+  }
+  const positive = Math.abs(hash);
+
+  if (isElectronics) {
+    const base = 299 + (positive % 9700);
+    const rounded = Math.round(base / 50) * 50 - 1;
+    const compare = Math.round(rounded * 1.25);
+    return { price: Math.max(199, rounded), comparePrice: compare };
+  } else {
+    const base = 25 + (positive % 550);
+    const rounded = Math.round(base / 5) * 5;
+    const compare = Math.round(rounded * 1.15);
+    return { price: Math.max(20, rounded), comparePrice: compare };
+  }
+}
+
+function generateRating(seedStr: string): { rating: number; count: number } {
+  let hash = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash = (hash << 5) - hash + seedStr.charCodeAt(i);
+    hash |= 0;
+  }
+  const positive = Math.abs(hash);
+  const rating = 3.9 + ((positive % 11) / 10);
+  const count = 20 + (positive % 600);
+  return { rating: Math.min(5.0, Math.round(rating * 10) / 10), count };
+}
+
+function getOptimizedImageUrl(rawImageUrl?: string | null): string {
+  if (!rawImageUrl || typeof rawImageUrl !== "string") return "/images/products/food-beverages.jpg";
+  const trimmed = rawImageUrl.trim();
+  if (trimmed.includes("openfoodfacts.org") || trimmed.includes("openproductsfacts.org")) {
+    if (!trimmed.includes(".400.jpg") && !trimmed.includes(".200.jpg") && trimmed.endsWith(".jpg")) {
+      return trimmed.replace(/\.jpg$/, ".400.jpg");
     }
   }
-  result.push(current.trim());
-  return result;
+  return trimmed;
+}
+
+async function fetchOpenFoodFactsIndia(seenImages: Set<string>, seenBarcodes: Set<string>): Promise<SeedProduct[]> {
+  console.log("Fetching live Indian Food Products from Open Food Facts...");
+  const products: SeedProduct[] = [];
+
+  const searchEndpoints = [
+    "https://in.openfoodfacts.org/api/v2/search?countries_tags_en=india&fields=code,product_name,product_name_en,generic_name,brands,categories,image_url,image_front_url,image_front_small_url,nutriscore_grade,ingredients_text,quantity&page_size=100&page=1",
+    "https://in.openfoodfacts.org/api/v2/search?countries_tags_en=india&fields=code,product_name,product_name_en,generic_name,brands,categories,image_url,image_front_url,image_front_small_url,nutriscore_grade,ingredients_text,quantity&page_size=100&page=2",
+    "https://in.openfoodfacts.org/api/v2/search?countries_tags_en=india&fields=code,product_name,product_name_en,generic_name,brands,categories,image_url,image_front_url,image_front_small_url,nutriscore_grade,ingredients_text,quantity&page_size=100&page=3"
+  ];
+
+  for (const url of searchEndpoints) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      const rawList = data.products || [];
+
+      for (const raw of rawList) {
+        const barcode = raw.code;
+        if (!barcode || seenBarcodes.has(barcode)) continue;
+
+        const rawName = raw.product_name_en || raw.product_name;
+        if (!isValidEnglishName(rawName)) continue;
+
+        const rawImg = raw.image_front_small_url || raw.image_front_url || raw.image_url;
+        if (!rawImg || typeof rawImg !== "string" || !rawImg.startsWith("http")) continue;
+
+        const img = getOptimizedImageUrl(rawImg);
+
+        // Strict 1:1 unique image per product
+        if (seenImages.has(img)) continue;
+        seenImages.add(img);
+        seenBarcodes.add(barcode);
+
+        const title = cleanTitle(rawName);
+        const brand = raw.brands ? cleanTitle(raw.brands.split(",")[0]) : "Indian Groceries";
+        
+        let subcat = "Snacks & Packaged Foods";
+        if (raw.categories) {
+          const firstCat = cleanTitle(raw.categories.split(",")[0]);
+          if (firstCat && firstCat.length > 2) {
+            subcat = firstCat;
+          }
+        }
+
+        const pricing = generateINRPrice(barcode + title, false);
+        const ratingInfo = generateRating(barcode);
+
+        products.push({
+          barcode,
+          title,
+          brand,
+          category: "Food & Beverages",
+          subcategory: subcat,
+          description: raw.generic_name || raw.ingredients_text || `${title} from ${brand}. Authentic Indian grocery item registered in Open Food Facts.`,
+          imageUrl: img,
+          productType: "GROCERIES",
+          quantity: raw.quantity || "Standard Pack",
+          price: pricing.price,
+          compareAtPrice: pricing.comparePrice,
+          rating: ratingInfo.rating,
+          reviewCount: ratingInfo.count,
+          attributes: {
+            nutriscore: raw.nutriscore_grade ? raw.nutriscore_grade.toUpperCase() : "N/A",
+            ingredients: raw.ingredients_text || "Natural food ingredients",
+            country: "India",
+            source: "Open Food Facts"
+          }
+        });
+      }
+    } catch (e: any) {
+      console.warn(`Error fetching OFF URL ${url}:`, e.message);
+    }
+  }
+
+  console.log(`Fetched ${products.length} valid India Food Products with verified 1:1 unique images.`);
+  return products;
+}
+
+async function fetchOpenProductsFactsElectronics(seenImages: Set<string>, seenBarcodes: Set<string>): Promise<SeedProduct[]> {
+  console.log("Fetching live Electronics & Accessories from Open Products Facts...");
+  const products: SeedProduct[] = [];
+
+  const searchUrls = [
+    "https://world.openproductsfacts.org/api/v2/search?categories_tags_en=electronics&fields=code,product_name,product_name_en,generic_name,brands,categories,image_url,image_front_url,image_front_small_url,quantity&page_size=100&page=1",
+    "https://world.openproductsfacts.org/api/v2/search?countries_tags_en=india&fields=code,product_name,product_name_en,generic_name,brands,categories,image_url,image_front_url,image_front_small_url,quantity&page_size=100&page=1",
+    "https://world.openproductsfacts.org/cgi/search.pl?search_terms=cable&search_simple=1&action=process&json=1",
+    "https://world.openproductsfacts.org/cgi/search.pl?search_terms=charger&search_simple=1&action=process&json=1",
+    "https://world.openproductsfacts.org/cgi/search.pl?search_terms=headphones&search_simple=1&action=process&json=1",
+    "https://world.openproductsfacts.org/cgi/search.pl?search_terms=battery&search_simple=1&action=process&json=1",
+    "https://world.openproductsfacts.org/cgi/search.pl?search_terms=phone&search_simple=1&action=process&json=1",
+    "https://world.openproductsfacts.org/cgi/search.pl?search_terms=laptop&search_simple=1&action=process&json=1",
+    "https://world.openproductsfacts.org/cgi/search.pl?search_terms=adapter&search_simple=1&action=process&json=1"
+  ];
+
+  for (const url of searchUrls) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      const rawList = data.products || [];
+
+      for (const raw of rawList) {
+        const barcode = raw.code;
+        if (!barcode || seenBarcodes.has(barcode)) continue;
+
+        const rawName = raw.product_name_en || raw.product_name;
+        if (!isValidEnglishName(rawName)) continue;
+
+        const rawImg = raw.image_front_small_url || raw.image_front_url || raw.image_url;
+        if (!rawImg || typeof rawImg !== "string" || !rawImg.startsWith("http")) continue;
+
+        const img = getOptimizedImageUrl(rawImg);
+
+        // Strict 1:1 unique image per product
+        if (seenImages.has(img)) continue;
+        seenImages.add(img);
+        seenBarcodes.add(barcode);
+
+        const title = cleanTitle(rawName);
+        const brand = raw.brands ? cleanTitle(raw.brands.split(",")[0]) : "Tech Brand";
+        
+        let subcat = "Accessories & Gadgets";
+        if (raw.categories) {
+          const firstCat = cleanTitle(raw.categories.split(",")[0]);
+          if (firstCat && firstCat.length > 2) {
+            subcat = firstCat;
+          }
+        }
+
+        const pricing = generateINRPrice(barcode + title, true);
+        const ratingInfo = generateRating(barcode);
+
+        products.push({
+          barcode,
+          title,
+          brand,
+          category: "Electronics",
+          subcategory: subcat,
+          description: raw.generic_name || `${title} by ${brand}. Verified electronics product catalogued in Open Products Facts.`,
+          imageUrl: img,
+          productType: "ELECTRONICS",
+          quantity: raw.quantity || "1 Unit",
+          price: pricing.price,
+          compareAtPrice: pricing.comparePrice,
+          rating: ratingInfo.rating,
+          reviewCount: ratingInfo.count,
+          attributes: {
+            source: "Open Products Facts",
+            country: "India",
+            warranty: "1 Year Manufacturer Warranty"
+          }
+        });
+      }
+    } catch (e: any) {
+      console.warn(`Error fetching OPF URL ${url}:`, e.message);
+    }
+  }
+
+  console.log(`Fetched ${products.length} valid Electronics Products with verified 1:1 unique images.`);
+  return products;
 }
 
 async function main() {
-  console.log("Starting NEXUS expanded marketplace seeding with optimized batching...");
+  console.log("=== STARTING DATABASE SEED WITH OPEN FOOD FACTS & OPEN PRODUCTS FACTS ===");
 
-  // 1. Clear database tables in logical dependency order
-  await prisma.flashSale.deleteMany({});
-  await prisma.interactionEvent.deleteMany({});
-  await prisma.productReview.deleteMany({});
-  await prisma.wishlistItem.deleteMany({});
-  await prisma.cartItem.deleteMany({});
-  await prisma.inventory.deleteMany({});
-  await prisma.inventoryReservation.deleteMany({});
-  await prisma.orderItem.deleteMany({});
-  await prisma.subOrder.deleteMany({});
-  await prisma.order.deleteMany({});
-  await prisma.paymentAttempt.deleteMany({});
-  await prisma.sellerListing.deleteMany({});
-  await prisma.productVariant.deleteMany({});
-  await prisma.product.deleteMany({});
-  await prisma.category.deleteMany({});
-  await prisma.brand.deleteMany({});
-  await prisma.vehicle.deleteMany({});
-  await prisma.menuItem.deleteMany({});
-  await prisma.restaurant.deleteMany({});
-  await prisma.userRole.deleteMany({});
-  await prisma.walletAccount.deleteMany({});
-  await prisma.session.deleteMany({});
-  await prisma.user.deleteMany({});
+  // 1. Wipe Old Database Records
+  console.log("Cleaning existing database records...");
+  await prisma.productReview.deleteMany({}).catch(() => {});
+  await prisma.interactionEvent.deleteMany({}).catch(() => {});
+  await prisma.inventoryReservation.deleteMany({}).catch(() => {});
+  await prisma.inventory.deleteMany({}).catch(() => {});
+  await prisma.cartItem.deleteMany({}).catch(() => {});
+  await prisma.wishlistItem.deleteMany({}).catch(() => {});
+  await prisma.orderItem.deleteMany({}).catch(() => {});
+  await prisma.subOrder.deleteMany({}).catch(() => {});
+  await prisma.order.deleteMany({}).catch(() => {});
+  await prisma.flashSale.deleteMany({}).catch(() => {});
+  await prisma.sellerListing.deleteMany({}).catch(() => {});
+  await prisma.productVariant.deleteMany({}).catch(() => {});
+  await prisma.product.deleteMany({}).catch(() => {});
+  await prisma.category.deleteMany({}).catch(() => {});
+  await prisma.brand.deleteMany({}).catch(() => {});
+  await prisma.seller.deleteMany({}).catch(() => {});
+  await prisma.vehicle.deleteMany({}).catch(() => {});
+  await prisma.ride.deleteMany({}).catch(() => {});
+  await prisma.menuItem.deleteMany({}).catch(() => {});
+  await prisma.foodOrder.deleteMany({}).catch(() => {});
+  await prisma.restaurant.deleteMany({}).catch(() => {});
+  await prisma.conversationMember.deleteMany({}).catch(() => {});
+  await prisma.conversation.deleteMany({}).catch(() => {});
+  await prisma.auditLog.deleteMany({}).catch(() => {});
+  await prisma.deviceKey.deleteMany({}).catch(() => {});
+  await prisma.refund.deleteMany({}).catch(() => {});
+  await prisma.paymentAttempt.deleteMany({}).catch(() => {});
+  await prisma.paymentMethod.deleteMany({}).catch(() => {});
+  await prisma.ledgerEntry.deleteMany({}).catch(() => {});
+  await prisma.ledgerTransaction.deleteMany({}).catch(() => {});
+  await prisma.walletAccount.deleteMany({}).catch(() => {});
+  await prisma.userRole.deleteMany({}).catch(() => {});
+  await prisma.session.deleteMany({}).catch(() => {});
+  await prisma.user.deleteMany({}).catch(() => {});
 
   console.log("Database cleared successfully.");
 
@@ -162,7 +328,7 @@ async function main() {
   await prisma.userRole.create({ data: { userId: consumerUser.id, role: "CONSUMER" } });
   await prisma.walletAccount.create({ data: { userId: consumerUser.id, balance: 50000, pinHash: await hashPassword("1234") } });
 
-  // Merchant 1: Bob Seller
+  // Merchant 1: Bob Electronics Seller
   const bobUser = await prisma.user.create({
     data: {
       email: "seller@nexus.com",
@@ -177,7 +343,7 @@ async function main() {
   const bobSeller = await prisma.seller.create({
     data: {
       userId: bobUser.id,
-      businessName: "Bob's Mega Electronics Store",
+      businessName: "Bob's Official Tech & Gadgets Store",
       kycStatus: "APPROVED",
       commissionRate: 0.08
     }
@@ -197,13 +363,13 @@ async function main() {
   const grocerySeller = await prisma.seller.create({
     data: {
       userId: grocerySellerUser.id,
-      businessName: "Alice's Organic Whole Foods",
+      businessName: "Alice's Fresh Foods & Groceries",
       kycStatus: "APPROVED",
       commissionRate: 0.05
     }
   });
 
-  // Merchant 3: Gizmo Merchant
+  // Merchant 3: Gizmo World
   const gadgetSellerUser = await prisma.user.create({
     data: {
       email: "gadgetseller@nexus.com",
@@ -217,13 +383,13 @@ async function main() {
   const gadgetSeller = await prisma.seller.create({
     data: {
       userId: gadgetSellerUser.id,
-      businessName: "Gizmo World Retail",
+      businessName: "Gizmo Electronics Hub",
       kycStatus: "APPROVED",
       commissionRate: 0.10
     }
   });
 
-  // Create Driver profile
+  // Create Driver
   const driverUser = await prisma.user.create({
     data: {
       email: "driver@nexus.com",
@@ -243,7 +409,7 @@ async function main() {
     }
   });
 
-  // Create Restaurant Owner
+  // Create Restaurant
   const restOwnerUser = await prisma.user.create({
     data: {
       email: "restaurant@nexus.com",
@@ -281,232 +447,144 @@ async function main() {
 
   console.log("Seeded basic standard user profiles, restaurants and drivers.");
 
-  // 4. Read and Parse CSV File
-  const csvPath = path.join(__dirname, "../NEXUS_MASTER_PRODUCT_CATALOG_COMBINED.csv");
-  if (!fs.existsSync(csvPath)) {
-    throw new Error(`CSV Dataset file not found at path: ${csvPath}`);
+  // 4. Fetch Products directly from Open Food Facts & Open Products Facts
+  const seenImages = new Set<string>();
+  const seenBarcodes = new Set<string>();
+
+  const [foodProducts, electronicsProducts] = await Promise.all([
+    fetchOpenFoodFactsIndia(seenImages, seenBarcodes),
+    fetchOpenProductsFactsElectronics(seenImages, seenBarcodes)
+  ]);
+
+  const allSeedProducts = [...foodProducts, ...electronicsProducts];
+  console.log(`Total Unified Products to seed: ${allSeedProducts.length} (Foods: ${foodProducts.length}, Electronics: ${electronicsProducts.length})`);
+
+  // 5. Build Category Tree
+  const parentCategories = ["Food & Beverages", "Electronics"];
+  const parentCategoryMap: Record<string, string> = {};
+
+  for (const pCat of parentCategories) {
+    const created = await prisma.category.create({
+      data: { name: pCat, parentId: null }
+    });
+    parentCategoryMap[pCat] = created.id;
   }
 
-  const csvContent = fs.readFileSync(csvPath, "utf8");
-  const lines = csvContent.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const subcategoryMap: Record<string, string> = {};
+  for (const item of allSeedProducts) {
+    const parentId = parentCategoryMap[item.category];
+    const subcatName = item.subcategory;
+    const key = `${item.category}:::${subcatName}`;
 
-  // Parse Header Column Indexes
-  const headers = parseCSVLine(lines[0]);
-  const getColIndex = (name: string) => headers.indexOf(name);
-
-  const idxProdGroupId = getColIndex("product_group_id");
-  const idxVariantId = getColIndex("variant_id");
-  const idxBaseProdName = getColIndex("base_product_name");
-  const idxProdName = getColIndex("product_name");
-  const idxBrand = getColIndex("brand");
-  const idxPackSize = getColIndex("variant_value_pack_size");
-  const idxCategory = getColIndex("category");
-  const idxSubcategory = getColIndex("subcategory");
-  const idxDescription = getColIndex("detailed_description");
-  const idxPrice = getColIndex("price");
-  const idxMrp = getColIndex("mrp");
-  const idxStock = getColIndex("stock_quantity");
-  const idxImageUrl = getColIndex("image_url");
-
-  console.log(`CSV parsed. Total lines: ${lines.length}. Starting DB batch imports...`);
-
-  // Collect unique brands and categories
-  const uniqueBrands = new Set<string>();
-  const categoryPairs = new Map<string, string>(); // subcategory name -> parent category name
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCSVLine(lines[i]);
-    if (cols.length < headers.length) continue;
-
-    const brandName = cols[idxBrand];
-    const catName = cols[idxCategory];
-    const subcatName = cols[idxSubcategory];
-
-    if (brandName) uniqueBrands.add(brandName);
-    if (catName && subcatName) {
-      categoryPairs.set(subcatName, catName);
+    if (!subcategoryMap[key]) {
+      let existingSubcat = await prisma.category.findUnique({ where: { name: subcatName } });
+      if (!existingSubcat) {
+        existingSubcat = await prisma.category.create({
+          data: {
+            name: subcatName,
+            parentId: parentId || null
+          }
+        });
+      }
+      subcategoryMap[key] = existingSubcat.id;
     }
   }
 
-  // Insert Brands
-  const brandsCache: Record<string, string> = {};
+  // 6. Build Brands
+  const uniqueBrands = new Set(allSeedProducts.map((p) => p.brand));
+  const brandMap: Record<string, string> = {};
+
   for (const bName of uniqueBrands) {
-    const b = await prisma.brand.create({ data: { name: bName } });
-    brandsCache[bName] = b.id;
-  }
-  console.log(`Seeded ${Object.keys(brandsCache).length} unique Brands.`);
-
-  // Insert Categories Tree
-  const categoriesCache: Record<string, string> = {};
-  const parentCategoriesSet = new Set(categoryPairs.values());
-
-  for (const pCatName of parentCategoriesSet) {
-    const pCat = await prisma.category.create({ data: { name: pCatName } });
-    categoriesCache[pCatName] = pCat.id;
+    let existingBrand = await prisma.brand.findUnique({ where: { name: bName } });
+    if (!existingBrand) {
+      existingBrand = await prisma.brand.create({
+        data: { name: bName }
+      });
+    }
+    brandMap[bName] = existingBrand.id;
   }
 
-  for (const [subcatName, pCatName] of categoryPairs.entries()) {
-    const pCatId = categoriesCache[pCatName];
-    const subcat = await prisma.category.create({
+  console.log(`Created ${Object.keys(parentCategoryMap).length} top categories, ${Object.keys(subcategoryMap).length} subcategories, and ${Object.keys(brandMap).length} brands.`);
+
+  // 7. Insert Products, Variants, Listings, Inventory & Reviews
+  let insertedCount = 0;
+  for (const item of allSeedProducts) {
+    const subcatKey = `${item.category}:::${item.subcategory}`;
+    const categoryId = subcategoryMap[subcatKey] || parentCategoryMap[item.category];
+    const brandId = brandMap[item.brand];
+    const sku = `${item.productType === "ELECTRONICS" ? "OPF" : "OFF"}-${item.barcode}`;
+
+    // Select seller based on product type
+    const assignedSellerId = item.productType === "GROCERIES" 
+      ? grocerySeller.id 
+      : (insertedCount % 2 === 0 ? bobSeller.id : gadgetSeller.id);
+
+    // Create Product
+    const product = await prisma.product.create({
       data: {
-        name: subcatName,
-        parentId: pCatId
+        title: item.title,
+        description: item.description,
+        brandId,
+        categoryId,
+        status: "ACTIVE",
+        productType: item.productType
       }
     });
-    categoriesCache[subcatName] = subcat.id;
-  }
-  console.log(`Seeded ${Object.keys(categoriesCache).length} Categories in hierarchical tree.`);
 
-  // 1. Process Products
-  const productsMap = new Map<string, string>(); // product_group_id -> db_product_id
-  const productsToCreate: any[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCSVLine(lines[i]);
-    if (cols.length < headers.length) continue;
-
-    const groupIdx = cols[idxProdGroupId];
-    if (productsMap.has(groupIdx)) continue;
-
-    const brandId = brandsCache[cols[idxBrand]] || null;
-    const catId = categoriesCache[cols[idxSubcategory]] || categoriesCache[cols[idxCategory]];
-    const typeStr = cols[idxCategory].toLowerCase().includes("food") || cols[idxCategory].toLowerCase().includes("beverage") ? "GROCERIES" : "ELECTRONICS";
-
-    const prodId = randomUUID();
-    productsMap.set(groupIdx, prodId);
-    productsToCreate.push({
-      id: prodId,
-      title: cols[idxBaseProdName],
-      description: cols[idxDescription],
-      brandId,
-      categoryId: catId,
-      status: "ACTIVE",
-      productType: typeStr
-    });
-  }
-
-  console.log(`Batch inserting ${productsToCreate.length} Products...`);
-  const CHUNK_SIZE = 1500;
-  for (let i = 0; i < productsToCreate.length; i += CHUNK_SIZE) {
-    await prisma.product.createMany({ data: productsToCreate.slice(i, i + CHUNK_SIZE) });
-  }
-
-  // 2. Process Variants, Listings, and Inventories
-  const variantsToCreate: any[] = [];
-  const listingsToCreate: any[] = [];
-  const inventoriesToCreate: any[] = [];
-
-  const addedSkus = new Set<string>();
-
-  console.log("Preparing variants and seller listings arrays...");
-  let count = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCSVLine(lines[i]);
-    if (cols.length < headers.length) continue;
-
-    const groupIdx = cols[idxProdGroupId];
-    const prodId = productsMap.get(groupIdx);
-    if (!prodId) continue;
-
-    const variantSku = cols[idxVariantId];
-    if (!variantSku || addedSkus.has(variantSku)) continue;
-    addedSkus.add(variantSku);
-
-    const categoryName = cols[idxCategory];
-    const subcategoryName = cols[idxSubcategory];
-    const titleStr = cols[idxBaseProdName];
-
-    const t = titleStr.toLowerCase();
-    const sub = subcategoryName.toLowerCase();
-    const isLiquid =
-      t.includes("milk") ||
-      t.includes("juice") ||
-      t.includes("drink") ||
-      t.includes("spinach") ||
-      t.includes("beverage") ||
-      sub.includes("beverag");
-
-    let nameStr = cols[idxPackSize] || "Standard Pack";
-    let attrName = cols[idxProdName] || titleStr;
-
-    if (isLiquid) {
-      nameStr = nameStr.replace(/\bkg\b/gi, "L").replace(/\bg\b/gi, "ml");
-      attrName = attrName.replace(/\bkg\b/gi, "L").replace(/\bg\b/gi, "ml");
-    }
-
-    const variantId = randomUUID();
-    variantsToCreate.push({
-      id: variantId,
-      productId: prodId,
-      sku: variantSku,
-      name: nameStr,
-      attributes: JSON.stringify({
-        variant_name: attrName,
-        tags: cols[getColIndex("tags_keywords")]
-      }),
-      imageUrl: (idxImageUrl !== -1 && cols[idxImageUrl] && cols[idxImageUrl].trim() !== "") ? cols[idxImageUrl] : getProductImageUrl(categoryName, subcategoryName, titleStr),
-      status: "ACTIVE"
-    });
-
-    // Seller Assignation
-    const sellersToAssign = [];
-    const typeStr = cols[idxCategory].toLowerCase().includes("food") || cols[idxCategory].toLowerCase().includes("beverage") ? "GROCERIES" : "ELECTRONICS";
-    
-    if (typeStr === "GROCERIES") {
-      sellersToAssign.push(grocerySeller);
-    } else {
-      sellersToAssign.push(bobSeller);
-      if (count % 3 === 0) {
-        sellersToAssign.push(gadgetSeller);
+    // Create Variant
+    const variant = await prisma.productVariant.create({
+      data: {
+        productId: product.id,
+        sku,
+        name: item.quantity,
+        imageUrl: item.imageUrl,
+        attributes: JSON.stringify(item.attributes),
+        status: "ACTIVE"
       }
-    }
+    });
 
-    for (const seller of sellersToAssign) {
-      const basePrice = Math.round(parseFloat(cols[idxPrice]) * 100);
-      const baseMrp = Math.round(parseFloat(cols[idxMrp]) * 100);
-
-      const listingId = randomUUID();
-      listingsToCreate.push({
-        id: listingId,
-        productVariantId: variantId,
-        sellerId: seller.id,
-        price: basePrice,
-        compareAtPrice: baseMrp > basePrice ? baseMrp : null,
+    // Create Seller Listing (in paise / cents: ₹150 -> 15000)
+    const listing = await prisma.sellerListing.create({
+      data: {
+        productVariantId: variant.id,
+        sellerId: assignedSellerId,
+        price: item.price * 100,
+        compareAtPrice: item.compareAtPrice * 100,
         currency: "INR",
         status: "ACTIVE"
-      });
+      }
+    });
 
-      inventoriesToCreate.push({
-        id: randomUUID(),
-        sellerListingId: listingId,
-        quantity: parseInt(cols[idxStock]) || 50,
+    // Create Inventory
+    await prisma.inventory.create({
+      data: {
+        sellerListingId: listing.id,
+        quantity: 50 + (insertedCount % 150),
         reservedQuantity: 0
-      });
-    }
-    count++;
+      }
+    });
+
+    // Create Product Review
+    await prisma.productReview.create({
+      data: {
+        productId: product.id,
+        userId: consumerUser.id,
+        rating: Math.max(1, Math.min(5, Math.round(item.rating))),
+        text: `Authentic ${item.title} from ${item.brand}. Highly recommended!`,
+        verifiedPurchase: true,
+        status: "APPROVED"
+      }
+    });
+
+    insertedCount++;
   }
 
-  console.log(`Batch inserting ${variantsToCreate.length} Variants...`);
-  for (let i = 0; i < variantsToCreate.length; i += CHUNK_SIZE) {
-    await prisma.productVariant.createMany({ data: variantsToCreate.slice(i, i + CHUNK_SIZE) });
-  }
-
-  console.log(`Batch inserting ${listingsToCreate.length} Seller Listings...`);
-  for (let i = 0; i < listingsToCreate.length; i += CHUNK_SIZE) {
-    await prisma.sellerListing.createMany({ data: listingsToCreate.slice(i, i + CHUNK_SIZE) });
-  }
-
-  console.log(`Batch inserting ${inventoriesToCreate.length} Inventory records...`);
-  for (let i = 0; i < inventoriesToCreate.length; i += CHUNK_SIZE) {
-    await prisma.inventory.createMany({ data: inventoriesToCreate.slice(i, i + CHUNK_SIZE) });
-  }
-
-  console.log(`Seeding completed successfully! Imported ${count} variants and ${listingsToCreate.length} active merchant listings.`);
+  console.log(`\n🎉 Successfully seeded ${insertedCount} live products from Open Food Facts & Open Products Facts with 100% verified, unique images!`);
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error("Seeding failed with error:", e);
     process.exit(1);
   })
   .finally(async () => {

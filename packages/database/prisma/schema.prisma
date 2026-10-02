@@ -56,6 +56,9 @@ model Session {
   expiresAt    DateTime
   revoked      Boolean  @default(false)
   createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model DeviceKey {
@@ -87,6 +90,8 @@ model Seller {
   updatedAt    DateTime     @updatedAt
   listings     SellerListing[]
   subOrders    SubOrder[]
+
+  @@index([userId])
 }
 
 model Brand {
@@ -102,6 +107,8 @@ model Category {
   parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
   children  Category[] @relation("CategoryHierarchy")
   products  Product[]
+
+  @@index([parentId])
 }
 
 model Product {
@@ -118,6 +125,12 @@ model Product {
   updatedAt   DateTime         @updatedAt
   variants    ProductVariant[]
   reviews     ProductReview[]
+
+  @@index([status, categoryId])
+  @@index([status, brandId])
+  @@index([status, createdAt])
+  @@index([categoryId])
+  @@index([brandId])
 }
 
 model ProductVariant {
@@ -130,6 +143,8 @@ model ProductVariant {
   imageUrl  String?
   status    String          @default("ACTIVE")
   listings  SellerListing[]
+
+  @@index([productId])
 }
 
 model SellerListing {
@@ -150,6 +165,10 @@ model SellerListing {
   cartItems        CartItem[]
   flashSales       FlashSale[]
   reservations     InventoryReservation[]
+
+  @@index([productVariantId, status])
+  @@index([sellerId])
+  @@index([status, price])
 }
 
 model Inventory {
@@ -182,6 +201,9 @@ model Order {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   subOrders   SubOrder[]
+
+  @@index([consumerId, status])
+  @@index([consumerId, createdAt])
 }
 
 model SubOrder {
@@ -238,6 +260,9 @@ model ProductReview {
   verifiedPurchase Boolean  @default(false)
   status           String   @default("APPROVED")
   createdAt        DateTime @default(now())
+
+  @@index([productId])
+  @@index([userId])
 }
 
 model InteractionEvent {

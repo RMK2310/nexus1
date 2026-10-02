@@ -63,6 +63,11 @@ Run backend and frontends in dev mode simultaneously or individually:
 - **Backend API Gateway (Port 3000)**: `npm run dev:backend`
 - **Mobile Simulator Portal (Port 3001)**: `npm run dev:mobile`
 - **Admin Analytics Portal (Port 3002)**: `npm run dev:admin`
+- **Flutter Native App**: `cd apps/mobile_flutter && flutter run`
+  - Android emulator reaches the backend via `http://10.0.2.2:3000` (default).
+  - Real device on same Wi-Fi: `flutter run --dart-define=BACKEND_HOST=<YOUR_PC_IP>:3000`.
+  - Feature tabs: Shop (Blinkit-style), Rides (Rapido-style), Food (Zomato-style), Chat (WhatsApp-style), Account (wallet).
+  - Payments run through the Razorpay test gateway or the NEXUS Wallet.
 
 ### 5. Running Tests
 Run the unit test suite:
