@@ -7,9 +7,11 @@ import { AuthModule } from "./auth/auth.module";
 import { CommerceModule } from "./commerce/commerce.module";
 import { WalletModule } from "./wallet/wallet.module";
 import { HealthModule } from "./health/health.module";
+import { FoodModule } from "./food/food.module";
+import { RideModule } from "./ride/ride.module";
+import { MessagingModule } from "./messaging/messaging.module";
 import { RequestIdMiddleware } from "./common/middleware/request-id.middleware";
 import { ImageProxyController } from "./common/image-proxy.controller";
-import { FoodController } from "./food/food.controller";
 import * as cookieParser from "cookie-parser";
 
 @Module({
@@ -25,8 +27,11 @@ import * as cookieParser from "cookie-parser";
     CommerceModule,
     WalletModule,
     HealthModule,
+    FoodModule,
+    RideModule,
+    MessagingModule,
   ],
-  controllers: [ImageProxyController, FoodController],
+  controllers: [ImageProxyController],
   providers: [
     // Apply rate limiting globally to all endpoints
     {

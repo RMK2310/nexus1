@@ -409,6 +409,7 @@ model FoodOrder {
   deliveryPartnerId String?
   otpCode           String
   totalAmount       Int         // In cents
+  items             String?     // JSON array of ordered items: [{ name, price, quantity }]
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 }
@@ -423,6 +424,7 @@ model Conversation {
   isGroup   Boolean              @default(false)
   createdAt DateTime             @default(now())
   members   ConversationMember[]
+  messages  ChatMessage[]
 }
 
 model ConversationMember {
@@ -435,6 +437,18 @@ model ConversationMember {
   joinedAt       DateTime     @default(now())
 
   @@unique([conversationId, userId])
+}
+
+model ChatMessage {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  senderName     String
+  content        String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
 }
 
 // ==========================================

@@ -23,6 +23,9 @@ import {
 } from "lucide-react";
 import { resolvePreciseProductImage, getOptimizedImageUrl } from "@nexus/shared";
 import { WalletPortal } from "./WalletPortal";
+import { FoodPortal } from "./FoodPortal";
+import { MobilityPortal } from "./MobilityPortal";
+import { ChatPortal } from "./ChatPortal";
 
 interface CustomerPortalProps {
   activeTab: "home" | "shop" | "chat" | "wallet" | "services";
@@ -110,6 +113,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   isLoading
 }) => {
   const [showDevStats, setShowDevStats] = useState(false);
+  const [servicesSubTab, setServicesSubTab] = useState<"food" | "mobility">("food");
   const isDevelopment = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
   return (
@@ -457,11 +461,12 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
       {/* Chat Tab */}
       {activeTab === "chat" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", textAlign: "center", padding: "40px 16px" }}>
-          <MessageSquare size={48} color="var(--text-muted)" style={{ margin: "0 auto 12px" }} />
-          <h3 style={{ fontSize: "15px" }}>Messaging Subsystem</h3>
-          <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Real-time chat modules and device cryptokey handshakes configure in Phase 4.</p>
-        </div>
+        <ChatPortal
+          user={user}
+          backendUrl={backendUrl}
+          setGlobalSuccessMsg={setGlobalSuccessMsg}
+          setGlobalErrorMsg={setGlobalErrorMsg}
+        />
       )}
 
       {/* Wallet Tab - Double-Entry Ledger, P2P Transfers & Statements */}
@@ -476,28 +481,82 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
         />
       )}
 
-      {/* Services Tab */}
+      {/* Services Tab: Food Delivery & Mobility Rides */}
       {activeTab === "services" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <h2 style={{ fontSize: "18px" }}>Connected Modules</h2>
-          <div className="glass-card" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ background: "rgba(59, 130, 246, 0.15)", padding: "10px", borderRadius: "12px" }}>
-              <Grid size={24} color="#3b82f6" />
-            </div>
-            <div>
-              <h4 style={{ fontSize: "13px" }}>Ride-Hailing Matching</h4>
-              <p style={{ fontSize: "10px", color: "var(--text-muted)" }}>Dynamic routing maps (Phase 6)</p>
-            </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          {/* Sub-tab Pill Switcher */}
+          <div
+            style={{
+              display: "flex",
+              background: "rgba(255, 255, 255, 0.05)",
+              borderRadius: "10px",
+              padding: "3px",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setServicesSubTab("food")}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: "none",
+                background: servicesSubTab === "food" ? "var(--primary)" : "transparent",
+                color: "#fff",
+                fontWeight: "700",
+                fontSize: "12px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+                transition: "all 0.15s ease",
+              }}
+            >
+              🍔 Food Delivery
+            </button>
+            <button
+              type="button"
+              onClick={() => setServicesSubTab("mobility")}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: "none",
+                background: servicesSubTab === "mobility" ? "var(--primary)" : "transparent",
+                color: "#fff",
+                fontWeight: "700",
+                fontSize: "12px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+                transition: "all 0.15s ease",
+              }}
+            >
+              🚗 Mobility & Rides
+            </button>
           </div>
-          <div className="glass-card" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ background: "rgba(16, 185, 129, 0.15)", padding: "10px", borderRadius: "12px" }}>
-              <ShoppingBag size={24} color="#10b981" />
-            </div>
-            <div>
-              <h4 style={{ fontSize: "13px" }}>Food Courier Delivery</h4>
-              <p style={{ fontSize: "10px", color: "var(--text-muted)" }}>Restaurant menus (Phase 5)</p>
-            </div>
-          </div>
+
+          {servicesSubTab === "food" ? (
+            <FoodPortal
+              user={user}
+              backendUrl={backendUrl}
+              onBalanceUpdate={onBalanceUpdate}
+              setGlobalSuccessMsg={setGlobalSuccessMsg}
+              setGlobalErrorMsg={setGlobalErrorMsg}
+            />
+          ) : (
+            <MobilityPortal
+              user={user}
+              backendUrl={backendUrl}
+              onBalanceUpdate={onBalanceUpdate}
+              setGlobalSuccessMsg={setGlobalSuccessMsg}
+              setGlobalErrorMsg={setGlobalErrorMsg}
+            />
+          )}
         </div>
       )}
     </div>
