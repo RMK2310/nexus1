@@ -12,9 +12,10 @@
     "db:audit": "ts-node src/integrity-check.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.10.2"
+    "@prisma/client": "^5.10.2",
+    "prisma": "^5.10.2"
   },
   "devDependencies": {
-    "prisma": "^5.10.2"
+    "typescript": "^5.3.3"
   }
 }
