@@ -5,7 +5,27 @@
  * - Recovers sessions and dispatches events for seamless UI synchronization
  */
 
-export const BACKEND_URL = "http://localhost:3000";
+export const getBackendUrl = (): string => {
+  if (typeof window === "undefined") return "http://localhost:3000";
+  const custom = localStorage.getItem("nexus_backend_url");
+  if (custom) return custom.replace(/\/+$/, "");
+
+  const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+  if (envUrl) return envUrl.replace(/\/+$/, "");
+
+  const isNative =
+    (window as any).Capacitor?.isNativePlatform?.() ||
+    window.location.protocol === "capacitor:" ||
+    window.location.origin.includes("https://localhost");
+
+  if (isNative) {
+    return "http://172.19.8.72:3000";
+  }
+
+  return "http://localhost:3000";
+};
+
+export const BACKEND_URL = getBackendUrl();
 
 export const getAccessToken = (): string | null => {
   return localStorage.getItem("nexus_access_token");

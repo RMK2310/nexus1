@@ -91,15 +91,17 @@ body {
   transform: translateX(-50%);
 }
 
-/* Media Queries to support tablets and phone screen sizes natively */
-@media (max-width: 576px) {
+/* Media Queries to support native phones, tablets, and responsive mobile viewports */
+@media (max-width: 768px), (display-mode: standalone) {
   body {
-    align-items: flex-start;
+    align-items: stretch !important;
+    background-color: var(--bg-main) !important;
   }
   .device-frame {
     height: 100vh !important;
     max-height: 100vh !important;
-    max-width: 100% !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
@@ -107,9 +109,16 @@ body {
   .device-notch {
     display: none !important;
   }
+  .home-indicator {
+    display: none !important;
+  }
+  .app-container {
+    padding-top: max(10px, env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+  }
 }
 
-@media (max-height: 700px) and (min-width: 577px) {
+@media (max-height: 700px) and (min-width: 769px) {
   .device-frame {
     height: 95vh;
     max-height: 95vh;
@@ -122,8 +131,8 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding-top: 30px; /* Spacer below notch */
-  padding-bottom: 24px; /* Spacer above home indicator */
+  padding-top: 14px;
+  padding-bottom: 10px;
   overflow: hidden;
   position: relative;
 }

@@ -10,6 +10,8 @@
   "scripts": {
     "bootstrap": "npm install",
     "build": "npm run build --workspaces --if-present",
+    "build:backend": "npm run build --workspace=packages/shared && cd packages/database && npx prisma generate && npm run build && cd ../.. && npm run build --workspace=apps/backend",
+    "start:backend": "node apps/backend/dist/src/main.js",
     "dev:backend": "npm run start:dev --workspace=apps/backend",
     "dev:mobile": "npm run dev --workspace=apps/mobile",
     "dev:admin": "npm run dev --workspace=apps/admin",

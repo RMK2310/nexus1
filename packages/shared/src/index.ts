@@ -103,10 +103,14 @@ export const AddReviewInputSchema = z.object({
 
 export type AddReviewInput = z.infer<typeof AddReviewInputSchema>;
 
-// Server-side Checkout (uses persistent cart, not client-provided items)
+// Server-side Checkout (uses persistent cart, with optional client items fallback)
 export const ServerCheckoutInputSchema = z.object({
   idempotencyKey: z.string().min(1, { message: "Idempotency key is required" }),
   paymentMethod: z.string().min(1, { message: "Payment method is required" }),
+  items: z.array(z.object({
+    sellerListingId: z.string().min(1),
+    quantity: z.number().int().min(1).default(1),
+  })).optional(),
 });
 
 export type ServerCheckoutInput = z.infer<typeof ServerCheckoutInputSchema>;
@@ -190,6 +194,10 @@ export const RazorpayCommerceOrderInputSchema = z.object({
     sellerListingId: z.string().min(1),
     quantity: z.number().int().min(1).default(1),
   }).optional(),
+  items: z.array(z.object({
+    sellerListingId: z.string().min(1),
+    quantity: z.number().int().min(1).default(1),
+  })).optional(),
 });
 
 export type RazorpayCommerceOrderInput = z.infer<typeof RazorpayCommerceOrderInputSchema>;
@@ -213,6 +221,10 @@ export const RazorpayCommerceVerifyInputSchema = z.object({
     sellerListingId: z.string().min(1),
     quantity: z.number().int().min(1).default(1),
   }).optional(),
+  items: z.array(z.object({
+    sellerListingId: z.string().min(1),
+    quantity: z.number().int().min(1).default(1),
+  })).optional(),
 });
 
 export type RazorpayCommerceVerifyInput = z.infer<typeof RazorpayCommerceVerifyInputSchema>;

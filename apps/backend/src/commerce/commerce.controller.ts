@@ -122,6 +122,13 @@ export class CommerceController {
     return { success: true, data };
   }
 
+  @Delete("cart")
+  @UseGuards(AuthGuard)
+  async clearCart(@CurrentUser() user: UserPayload) {
+    const data = await this.commerceService.clearCart(user.userId);
+    return { success: true, data };
+  }
+
   // Persistent Wishlist actions
   @Get("wishlist")
   @UseGuards(AuthGuard)
@@ -214,6 +221,25 @@ export class CommerceController {
   ) {
     const data = await this.commerceService.verifyRazorpayCheckoutPayment(user.userId, input);
     return { success: true, message: "Payment verified and order placed successfully.", data };
+  }
+
+  // Placed Orders History & Real-Time Tracking
+  @Get("orders")
+  @UseGuards(AuthGuard)
+  async getUserOrders(@CurrentUser() user: UserPayload) {
+    const data = await this.commerceService.getUserOrders(user.userId);
+    return { success: true, data };
+  }
+
+  // Amazon-Style Package Tracking
+  @Get("orders/:id/track")
+  @UseGuards(AuthGuard)
+  async trackOrder(
+    @CurrentUser() user: UserPayload,
+    @Param("id") id: string
+  ) {
+    const data = await this.commerceService.trackOrder(id, user.userId);
+    return { success: true, data };
   }
 
   // Admin Pending Products Moderation directory

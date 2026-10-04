@@ -15,6 +15,21 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { authFetch } from "./services/apiClient";
+import { GoogleMapView } from "./GoogleMapView";
+
+const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+};
 
 interface MenuItem {
   id: string;
@@ -27,6 +42,9 @@ interface Restaurant {
   id: string;
   name: string;
   cuisine: string;
+  lat?: number;
+  lng?: number;
+  address?: string;
   menus: MenuItem[];
 }
 
@@ -56,6 +74,167 @@ interface FoodPortalProps {
   onPayWithRazorpay?: (amount: number, description: string, onSuccess: () => void) => void;
 }
 
+const DEFAULT_RESTAURANTS: Restaurant[] = [
+  {
+    id: "rest-curry-palace",
+    name: "The Curry Palace",
+    cuisine: "North Indian • Mughlai • Biryani",
+    lat: 12.9784,
+    lng: 77.6408,
+    address: "100 Feet Rd, Indiranagar",
+    menus: [
+      { id: "menu-cp-1", name: "Butter Chicken with Garlic Naan", price: 349, isAvailable: true },
+      { id: "menu-cp-2", name: "Paneer Tikka Masala", price: 299, isAvailable: true },
+      { id: "menu-cp-3", name: "Hyderabadi Dum Mutton Biryani", price: 449, isAvailable: true },
+      { id: "menu-cp-4", name: "Dal Makhani (Slow-Cooked 24hrs)", price: 249, isAvailable: true },
+      { id: "menu-cp-5", name: "Murgh Malai Tikka (6 pcs)", price: 329, isAvailable: true },
+      { id: "menu-cp-6", name: "Garlic Butter Naan Basket", price: 129, isAvailable: true },
+      { id: "menu-cp-7", name: "Kesari Kheer & Gulab Jamun", price: 149, isAvailable: true },
+      { id: "menu-cp-8", name: "Royal Mango Lassi", price: 119, isAvailable: true },
+    ],
+  },
+  {
+    id: "rest-pizza-roma",
+    name: "Pizza Roma Trattoria",
+    cuisine: "Italian • Wood-Fired Pizza • Pasta",
+    lat: 12.9352,
+    lng: 77.6245,
+    address: "5th Block, Koramangala",
+    menus: [
+      { id: "menu-pr-1", name: "Margherita di Bufala Pizza", price: 449, isAvailable: true },
+      { id: "menu-pr-2", name: "Quattro Formaggi Wood-Fired Pizza", price: 529, isAvailable: true },
+      { id: "menu-pr-3", name: "Truffle Mushroom Fettuccine", price: 499, isAvailable: true },
+      { id: "menu-pr-4", name: "Pepperoni Piccante Sourdough Pizza", price: 579, isAvailable: true },
+      { id: "menu-pr-5", name: "Classic Garlic Knots with Marinara", price: 189, isAvailable: true },
+      { id: "menu-pr-6", name: "Creamy Pesto Penne Primavera", price: 419, isAvailable: true },
+      { id: "menu-pr-7", name: "Traditional Tiramisu al Caffe", price: 249, isAvailable: true },
+      { id: "menu-pr-8", name: "Sicilian Lemon Iced Tea", price: 139, isAvailable: true },
+    ],
+  },
+  {
+    id: "rest-sushi-harbor",
+    name: "Sushi Harbor & Asian Wok",
+    cuisine: "Pan-Asian • Sushi • Dim Sum",
+    lat: 12.9756,
+    lng: 77.6066,
+    address: "Church Street, MG Road",
+    menus: [
+      { id: "menu-sh-1", name: "Spicy Salmon Crunch Roll (8 pcs)", price: 549, isAvailable: true },
+      { id: "menu-sh-2", name: "Truffle Edamame Dim Sum (6 pcs)", price: 379, isAvailable: true },
+      { id: "menu-sh-3", name: "Peking Chilli Garlic Noodles", price: 319, isAvailable: true },
+      { id: "menu-sh-4", name: "Crispy Prawn Tempura (4 pcs)", price: 429, isAvailable: true },
+      { id: "menu-sh-5", name: "Chicken Katsu Curry with Jasmine Rice", price: 469, isAvailable: true },
+      { id: "menu-sh-6", name: "Steamed Teriyaki Chicken Bao Buns (3 pcs)", price: 299, isAvailable: true },
+      { id: "menu-sh-7", name: "Thai Green Curry with Steamed Rice", price: 399, isAvailable: true },
+      { id: "menu-sh-8", name: "Japanese Matcha Boba Cooler", price: 189, isAvailable: true },
+    ],
+  },
+  {
+    id: "rest-burger-craft",
+    name: "Burger Craft & Shake Lab",
+    cuisine: "Gourmet Smash Burgers • Fries",
+    lat: 12.9719,
+    lng: 77.5937,
+    address: "Lavelle Road, Central Bengaluru",
+    menus: [
+      { id: "menu-bc-1", name: "Double Smash Bacon Cheeseburger", price: 399, isAvailable: true },
+      { id: "menu-bc-2", name: "Crispy Peri Peri Chicken Burger", price: 349, isAvailable: true },
+      { id: "menu-bc-3", name: "Truffle Mushroom Swiss Melt Burger", price: 389, isAvailable: true },
+      { id: "menu-bc-4", name: "Loaded Truffle Parmesan Fries", price: 199, isAvailable: true },
+      { id: "menu-bc-5", name: "Fiery Buffalo Wings with Blue Cheese Dip", price: 279, isAvailable: true },
+      { id: "menu-bc-6", name: "Thick Belgian Chocolate Shake", price: 219, isAvailable: true },
+      { id: "menu-bc-7", name: "Salted Caramel Pretzel Shake", price: 229, isAvailable: true },
+      { id: "menu-bc-8", name: "Crispy Beer-Battered Onion Rings", price: 159, isAvailable: true },
+    ],
+  },
+  {
+    id: "rest-bengaluru-tiffin",
+    name: "Namma Bengaluru Tiffin & Dosa Hub",
+    cuisine: "South Indian • Filter Coffee • Tiffin",
+    lat: 12.9298,
+    lng: 77.5833,
+    address: "Jayanagar 4th Block, Bengaluru",
+    menus: [
+      { id: "menu-bt-1", name: "Iconic Benne Masala Dosa with Chutneys", price: 149, isAvailable: true },
+      { id: "menu-bt-2", name: "Ghee Podi Thatte Idli with Coconut Chutney", price: 119, isAvailable: true },
+      { id: "menu-bt-3", name: "Crispy Medu Vada (2 pcs) with Sambar", price: 89, isAvailable: true },
+      { id: "menu-bt-4", name: "Traditional Rava Masala Dosa", price: 139, isAvailable: true },
+      { id: "menu-bt-5", name: "Royal Bisibelebath with Khara Boondi", price: 129, isAvailable: true },
+      { id: "menu-bt-6", name: "Filter Coffee (Kumbakonam Degree)", price: 49, isAvailable: true },
+      { id: "menu-bt-7", name: "Pure Ghee Mysore Pak (4 pcs)", price: 129, isAvailable: true },
+      { id: "menu-bt-8", name: "Kesari Bath with Cashews & Saffron", price: 89, isAvailable: true },
+    ],
+  },
+  {
+    id: "rest-meghana-biryani",
+    name: "Meghana Royal Biryani & Andhra Spices",
+    cuisine: "Authentic Andhra Biryani • Spicy Starters",
+    lat: 12.9344,
+    lng: 77.6111,
+    address: "Sony Signal, Koramangala",
+    menus: [
+      { id: "menu-mb-1", name: "Special Andhra Boneless Chicken Biryani", price: 389, isAvailable: true },
+      { id: "menu-mb-2", name: "Authentic Meghana Chicken 65", price: 319, isAvailable: true },
+      { id: "menu-mb-3", name: "Andhra Chilli Chicken (Green Gravy)", price: 329, isAvailable: true },
+      { id: "menu-mb-4", name: "Fragrant Mutton Dum Biryani (Full Pot)", price: 489, isAvailable: true },
+      { id: "menu-mb-5", name: "Paneer 65 Biryani with Raita", price: 299, isAvailable: true },
+      { id: "menu-mb-6", name: "Guntur Ghee Roast Chicken", price: 349, isAvailable: true },
+      { id: "menu-mb-7", name: "Double Ka Meetha (Royal Bread Pudding)", price: 139, isAvailable: true },
+      { id: "menu-mb-8", name: "Spiced Buttermilk & Sweet Lime Soda", price: 69, isAvailable: true },
+    ],
+  },
+  {
+    id: "rest-taco-fiesta",
+    name: "Taco Fiesta Mexicana",
+    cuisine: "Mexican • Tacos • Burritos & Bowls",
+    lat: 12.9719,
+    lng: 77.6412,
+    address: "12th Main Road, Indiranagar",
+    menus: [
+      { id: "menu-tf-1", name: "Smoky Chipotle Chicken Tacos (3 pcs)", price: 349, isAvailable: true },
+      { id: "menu-tf-2", name: "Slow-Cooked Birria Beef Tacos with Consomé", price: 449, isAvailable: true },
+      { id: "menu-tf-3", name: "Loaded Triple Cheese Quesadilla", price: 299, isAvailable: true },
+      { id: "menu-tf-4", name: "Grilled Fajita Burrito Bowl", price: 369, isAvailable: true },
+      { id: "menu-tf-5", name: "House Fresh Guacamole with Tortilla Chips", price: 229, isAvailable: true },
+      { id: "menu-tf-6", name: "Crispy Cinnamon Churros with Chocolate Dulce", price: 199, isAvailable: true },
+      { id: "menu-tf-7", name: "Mexican Horchata Spiced Drink", price: 139, isAvailable: true },
+    ],
+  },
+  {
+    id: "rest-artisan-bakery",
+    name: "Artisan Bakery & Dessert Atelier",
+    cuisine: "Pastries • Cheesecakes • Speciality Coffee",
+    lat: 12.9716,
+    lng: 77.5955,
+    address: "UB City, Vittal Mallya Road",
+    menus: [
+      { id: "menu-ab-1", name: "Belgian Dark Chocolate Ganache Gateau", price: 289, isAvailable: true },
+      { id: "menu-ab-2", name: "New York Baked Blueberry Cheesecake", price: 319, isAvailable: true },
+      { id: "menu-ab-3", name: "French Almond Butter Croissant", price: 179, isAvailable: true },
+      { id: "menu-ab-4", name: "Pastel French Macarons Box (4 assorted)", price: 299, isAvailable: true },
+      { id: "menu-ab-5", name: "Warm Nutella Stuffed Cookie Skillet", price: 249, isAvailable: true },
+      { id: "menu-ab-6", name: "Iced Spanish Latte with Condensed Milk", price: 219, isAvailable: true },
+      { id: "menu-ab-7", name: "Cold Brew Tonic with Citrus Peel", price: 199, isAvailable: true },
+    ],
+  },
+  {
+    id: "rest-street-chaat",
+    name: "Chai & Street Chaat Junction",
+    cuisine: "Street Food • Chaat • Kulhad Chai",
+    lat: 12.9822,
+    lng: 77.6083,
+    address: "Commercial Street, Tasker Town",
+    menus: [
+      { id: "menu-sc-1", name: "Delhi Style Papdi Chaat & Dahi Bhalla", price: 149, isAvailable: true },
+      { id: "menu-sc-2", name: "Mumbai Pav Bhaji with Extra Amul Butter", price: 189, isAvailable: true },
+      { id: "menu-sc-3", name: "Crispy Samosa Chaat with Tangy Chutneys", price: 129, isAvailable: true },
+      { id: "menu-sc-4", name: "Kolkata Puchka / Golgappe Platter (8 pcs)", price: 119, isAvailable: true },
+      { id: "menu-sc-5", name: "Maskabun with Ginger Cardamom Chai", price: 99, isAvailable: true },
+      { id: "menu-sc-6", name: "Kulhad Rabdi Jalebi (Hot & Crisp)", price: 149, isAvailable: true },
+    ],
+  },
+];
+
 export const FoodPortal: React.FC<FoodPortalProps> = ({
   user,
   backendUrl,
@@ -63,7 +242,7 @@ export const FoodPortal: React.FC<FoodPortalProps> = ({
   setGlobalSuccessMsg,
   setGlobalErrorMsg,
 }) => {
-  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [restaurants, setRestaurants] = useState<Restaurant[]>(DEFAULT_RESTAURANTS);
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [cart, setCart] = useState<{ [restaurantId: string]: CartItem[] }>({});
   const [orders, setOrders] = useState<FoodOrder[]>([]);
@@ -74,19 +253,53 @@ export const FoodPortal: React.FC<FoodPortalProps> = ({
   const [deliveryAddress, setDeliveryAddress] = useState(
     user?.address || "42, Tech Park Residency, Bengaluru"
   );
+  const [deliveryCoords, setDeliveryCoords] = useState<{ lat: number; lng: number }>({
+    lat: 12.9279,
+    lng: 77.6271,
+  });
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [selectedFoodTracking, setSelectedFoodTracking] = useState<any | null>(null);
+  const [foodTrackingData, setFoodTrackingData] = useState<any | null>(null);
+  const [isTrackingLoading, setIsTrackingLoading] = useState(false);
+  const [deliveryRoadDistance, setDeliveryRoadDistance] = useState<number | null>(null);
+  const [deliveryRoadDuration, setDeliveryRoadDuration] = useState<number | null>(null);
+  const [courierSimulatedProgress, setCourierSimulatedProgress] = useState<number>(35);
 
   useEffect(() => {
     fetchRestaurants();
     fetchOrders();
   }, [backendUrl]);
 
+  useEffect(() => {
+    if (!selectedFoodTracking) {
+      setDeliveryRoadDistance(null);
+      setDeliveryRoadDuration(null);
+      return;
+    }
+
+    if (selectedFoodTracking.status === "OUT_FOR_DELIVERY") {
+      setCourierSimulatedProgress((prev) => (prev < 20 || prev > 90 ? 35 : prev));
+      const interval = setInterval(() => {
+        setCourierSimulatedProgress((prev) => {
+          if (prev >= 92) return 92;
+          return prev + 1;
+        });
+      }, 1000);
+      return () => clearInterval(interval);
+    } else if (selectedFoodTracking.status === "DELIVERED") {
+      setCourierSimulatedProgress(100);
+    } else if (selectedFoodTracking.status === "PREPARING") {
+      setCourierSimulatedProgress(25);
+    } else {
+      setCourierSimulatedProgress(10);
+    }
+  }, [selectedFoodTracking?.status, selectedFoodTracking?.id]);
+
   const fetchRestaurants = async () => {
-    setIsLoading(true);
     try {
       const res = await fetch(`${backendUrl}/api/v1/food/restaurants`);
       const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
         setRestaurants(data.data);
       }
     } catch (err) {
@@ -107,6 +320,33 @@ export const FoodPortal: React.FC<FoodPortalProps> = ({
       }
     } catch (err) {
       console.warn("Failed to fetch food orders:", err);
+    }
+  };
+
+  const openFoodTracking = async (order: any) => {
+    setSelectedFoodTracking(order);
+    setCourierSimulatedProgress(
+      order.status === "DELIVERED"
+        ? 100
+        : order.status === "OUT_FOR_DELIVERY"
+        ? 40
+        : order.status === "PREPARING"
+        ? 25
+        : 10
+    );
+    setIsTrackingLoading(true);
+    try {
+      const res = await authFetch(`${backendUrl}/api/v1/food/orders/${order.id}/track`, {}, backendUrl);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          setFoodTrackingData(json.data);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch food tracking:", e);
+    } finally {
+      setIsTrackingLoading(false);
     }
   };
 
@@ -248,9 +488,14 @@ export const FoodPortal: React.FC<FoodPortalProps> = ({
             <UtensilsCrossed size={18} color="#fff" />
           </div>
           <div>
-            <h3 style={{ fontSize: "15px", fontWeight: "700" }}>NEXUS Food Courier</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <h3 style={{ fontSize: "15px", fontWeight: "700" }}>NEXUS Food Courier</h3>
+              <span style={{ fontSize: "9px", background: "rgba(16, 185, 129, 0.15)", color: "#10B981", border: "1px solid rgba(16, 185, 129, 0.35)", padding: "1px 6px", borderRadius: "4px", fontWeight: "700" }}>
+                100% FREE • NO API KEY
+              </span>
+            </div>
             <p style={{ fontSize: "10px", color: "var(--text-secondary)" }}>
-              Hyper-local gourmet delivery & real-time kitchen tracking
+              Hyper-local gourmet delivery & real-time street map tracking
             </p>
           </div>
         </div>
@@ -615,15 +860,40 @@ export const FoodPortal: React.FC<FoodPortalProps> = ({
               </div>
             </div>
 
-            {/* Delivery address */}
+            {/* Delivery address & Real Map Pinning */}
             <div>
-              <span style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Delivery Address</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                <span style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Delivery Address</span>
+                <span style={{ fontSize: "10px", color: "#F97316", fontWeight: "600" }}>📍 Tap map to set drop location</span>
+              </div>
               <input
                 type="text"
                 className="text-input"
                 value={deliveryAddress}
                 onChange={(e) => setDeliveryAddress(e.target.value)}
-                style={{ width: "100%", marginTop: "4px" }}
+                style={{ width: "100%", marginBottom: "8px" }}
+              />
+              <GoogleMapView
+                mode="PLANNING"
+                startLat={selectedRestaurant.lat || 12.9784}
+                startLng={selectedRestaurant.lng || 77.6408}
+                destLat={deliveryCoords.lat}
+                destLng={deliveryCoords.lng}
+                startLabel={`${selectedRestaurant.name} (Kitchen)`}
+                destLabel={`Drop: ${deliveryAddress}`}
+                pinMode="DEST"
+                onMapClick={(lat, lng) => {
+                  setDeliveryCoords({ lat, lng });
+                  setDeliveryAddress(`Pinned Address (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+                }}
+                distanceKm={calculateDistanceKm(
+                  selectedRestaurant.lat || 12.9784,
+                  selectedRestaurant.lng || 77.6408,
+                  deliveryCoords.lat,
+                  deliveryCoords.lng
+                )}
+                etaText={`${Math.max(12, Math.round(calculateDistanceKm(selectedRestaurant.lat || 12.9784, selectedRestaurant.lng || 77.6408, deliveryCoords.lat, deliveryCoords.lng) * 3.5 + 10))} mins`}
+                height="170px"
               />
             </div>
 
@@ -792,29 +1062,253 @@ export const FoodPortal: React.FC<FoodPortalProps> = ({
                     </div>
                   )}
 
-                  {/* Simulation Button for evaluation */}
-                  {!isDelivered && (
+                  <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
                     <button
-                      onClick={() => advanceOrderStatus(ord.id)}
+                      onClick={() => openFoodTracking(ord)}
                       style={{
-                        background: "rgba(255,255,255,0.06)",
-                        border: "1px solid var(--border)",
+                        flex: 1,
+                        background: "rgba(249, 115, 22, 0.15)",
+                        border: "1px solid rgba(249, 115, 22, 0.35)",
                         borderRadius: "6px",
-                        color: "var(--primary)",
-                        padding: "6px",
-                        fontSize: "10px",
-                        fontWeight: "600",
+                        color: "#f97316",
+                        padding: "8px",
+                        fontSize: "11px",
+                        fontWeight: "700",
                         cursor: "pointer",
-                        marginTop: "4px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "6px",
                       }}
                     >
-                      ⚡ Advance Order Simulation ({isPreparing ? "Kitchen ➔ Out for Delivery" : "Out for Delivery ➔ Delivered"})
+                      <Truck size={12} /> Live Delivery Tracker
                     </button>
-                  )}
+
+                    {/* Simulation Button for evaluation */}
+                    {!isDelivered && (
+                      <button
+                        onClick={() => advanceOrderStatus(ord.id)}
+                        style={{
+                          background: "rgba(255,255,255,0.06)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "6px",
+                          color: "var(--primary)",
+                          padding: "8px",
+                          fontSize: "10px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                        }}
+                      >
+                        ⚡ Advance ({isPreparing ? "Kitchen ➔ En Route" : "En Route ➔ Delivered"})
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })
           )}
+        </div>
+      )}
+
+      {/* LIVE FOOD DELIVERY TRACKING MODAL */}
+      {selectedFoodTracking && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.8)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+            zIndex: 110,
+          }}
+        >
+          <div
+            className="glass-card"
+            style={{
+              maxWidth: "420px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: "14px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <Truck size={16} color="#f97316" />
+                <h3 style={{ fontSize: "15px", fontWeight: "700" }}>Live Courier Tracking</h3>
+              </div>
+              <button
+                onClick={() => setSelectedFoodTracking(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "16px" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Live GPS Street Map Telemetry */}
+            {(() => {
+              const trackingRest =
+                restaurants.find((r) => r.id === selectedFoodTracking.restaurantId) ||
+                DEFAULT_RESTAURANTS.find((r) => r.id === selectedFoodTracking.restaurantId) ||
+                restaurants[0] ||
+                DEFAULT_RESTAURANTS[0];
+
+              const restLat = trackingRest?.lat || 12.9784;
+              const restLng = trackingRest?.lng || 77.6408;
+              const restName = trackingRest?.name || "Kitchen";
+              const progressPercent =
+                selectedFoodTracking.status === "DELIVERED"
+                  ? 100
+                  : selectedFoodTracking.status === "OUT_FOR_DELIVERY"
+                  ? courierSimulatedProgress
+                  : selectedFoodTracking.status === "PREPARING"
+                  ? 25
+                  : 10;
+
+              const distKm = calculateDistanceKm(restLat, restLng, deliveryCoords.lat, deliveryCoords.lng);
+              const effectiveDistKm = deliveryRoadDistance !== null ? deliveryRoadDistance : distKm;
+              const etaMin =
+                selectedFoodTracking.status === "DELIVERED"
+                  ? 0
+                  : deliveryRoadDuration !== null
+                  ? Math.max(1, Math.round(deliveryRoadDuration * (1 - (selectedFoodTracking.status === "OUT_FOR_DELIVERY" ? courierSimulatedProgress / 100 : 0.2))))
+                  : Math.max(4, Math.round(distKm * 3.5));
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <GoogleMapView
+                    mode="FOOD_DELIVERY"
+                    startLat={restLat}
+                    startLng={restLng}
+                    destLat={deliveryCoords.lat}
+                    destLng={deliveryCoords.lng}
+                    startLabel={`${restName} Kitchen`}
+                    destLabel={`Delivery: ${deliveryAddress}`}
+                    tripProgressPercent={progressPercent}
+                    etaText={selectedFoodTracking.status === "DELIVERED" ? "Delivered" : `${etaMin} mins`}
+                    distanceKm={effectiveDistKm}
+                    onRouteChange={(dist, dur) => {
+                      setDeliveryRoadDistance(dist);
+                      setDeliveryRoadDuration(dur);
+                    }}
+                    height="230px"
+                  />
+
+                  {/* Telemetry Card */}
+                  <div
+                    style={{
+                      background: "radial-gradient(ellipse at center, rgba(16, 185, 129, 0.12), rgba(15, 23, 42, 0.95))",
+                      border: "1px solid rgba(16, 185, 129, 0.35)",
+                      borderRadius: "10px",
+                      padding: "10px 14px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      fontSize: "11px",
+                    }}
+                  >
+                    <div>
+                      <span style={{ color: "var(--text-muted)", fontSize: "9px", display: "block" }}>
+                        DELIVERY PARTNER
+                      </span>
+                      <strong style={{ color: "#f8fafc" }}>
+                        {foodTrackingData?.deliveryPartner?.name || "Ramesh Kumar (Fleet #12)"}
+                      </strong>
+                      <div style={{ fontSize: "10px", color: "#10b981", marginTop: "2px", fontWeight: "600" }}>
+                        🛵 100% Paved Road Network (0% Off-Road)
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <span style={{ color: "var(--text-muted)", fontSize: "9px", display: "block" }}>
+                        LIVE STATUS / ETA
+                      </span>
+                      <strong style={{ color: "#10b981", fontSize: "12px" }}>
+                        {selectedFoodTracking.status === "DELIVERED"
+                          ? "Delivered 🎉"
+                          : `~${etaMin} mins (${effectiveDistKm} km)`}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Stepper Status Timeline */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: "rgba(255,255,255,0.02)", padding: "12px", borderRadius: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10b981" }} />
+                <span style={{ fontSize: "12px", color: "#10b981", fontWeight: "700" }}>✓ Order Confirmed by Restaurant</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: selectedFoodTracking.status !== "PLACED" ? "#10b981" : "#64748b" }} />
+                <span style={{ fontSize: "12px", color: selectedFoodTracking.status !== "PLACED" ? "#fff" : "var(--text-muted)", fontWeight: "600" }}>
+                  🍳 Kitchen Preparing Hot Meals
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: ["OUT_FOR_DELIVERY", "DELIVERED"].includes(selectedFoodTracking.status) ? "#10b981" : "#64748b" }} />
+                <span style={{ fontSize: "12px", color: ["OUT_FOR_DELIVERY", "DELIVERED"].includes(selectedFoodTracking.status) ? "#fff" : "var(--text-muted)", fontWeight: "600" }}>
+                  🛵 Delivery Partner Picked Up & En Route
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: selectedFoodTracking.status === "DELIVERED" ? "#10b981" : "#64748b" }} />
+                <span style={{ fontSize: "12px", color: selectedFoodTracking.status === "DELIVERED" ? "#10b981" : "var(--text-muted)", fontWeight: "600" }}>
+                  🎉 Delivered at Doorstep
+                </span>
+              </div>
+            </div>
+
+            {/* OTP Banner */}
+            {selectedFoodTracking.status !== "DELIVERED" && (
+              <div style={{ background: "rgba(249, 115, 22, 0.15)", border: "1px dashed #f97316", borderRadius: "8px", padding: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <span style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>DELIVERY OTP</span>
+                  <div style={{ fontSize: "18px", fontWeight: "800", letterSpacing: "2px", color: "#f97316" }}>
+                    {selectedFoodTracking.otpCode}
+                  </div>
+                </div>
+                <span style={{ fontSize: "10px", color: "var(--text-secondary)", textAlign: "right" }}>
+                  Share with delivery rider upon arrival
+                </span>
+              </div>
+            )}
+
+            {/* Advance Status button inside modal */}
+            {selectedFoodTracking.status !== "DELIVERED" && (
+              <button
+                onClick={async () => {
+                  await advanceOrderStatus(selectedFoodTracking.id);
+                  const updatedOrders = await authFetch(`${backendUrl}/api/v1/food/orders`, {}, backendUrl).then(r => r.json());
+                  if (updatedOrders.success) {
+                    setOrders(updatedOrders.data);
+                    const curr = updatedOrders.data.find((o: any) => o.id === selectedFoodTracking.id);
+                    if (curr) setSelectedFoodTracking(curr);
+                  }
+                }}
+                className="btn-primary"
+                style={{ width: "100%", padding: "10px", fontSize: "11px", fontWeight: "700" }}
+              >
+                ⚡ Advance Order Status Simulation
+              </button>
+            )}
+
+            <button
+              onClick={() => setSelectedFoodTracking(null)}
+              className="btn-secondary"
+              style={{ width: "100%", padding: "8px", fontSize: "11px" }}
+            >
+              Close Tracker
+            </button>
+          </div>
         </div>
       )}
     </div>

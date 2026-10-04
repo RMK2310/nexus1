@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { firebaseMock, UserProfile as FirebaseUserProfile } from "./firebaseMock";
 import { LoginPage } from "./LoginPage";
 import { CustomerPortal } from "./CustomerPortal";
@@ -6,6 +6,7 @@ import { SellerPortal } from "./SellerPortal";
 import { AdminPortal } from "./AdminPortal";
 import { ProductRepository } from "./services/productRepository";
 import { RazorpayModal } from "./RazorpayModal";
+import { WolfLoader, GlobalWolfLoader, triggerWolfLoad } from "./WolfLoader";
 import {
   Home,
   ShoppingBag,
@@ -30,7 +31,11 @@ import {
   Heart,
   Eye,
   FileText,
-  AlertCircle
+  AlertCircle,
+  Zap,
+  CreditCard,
+  Package,
+  Truck
 } from "lucide-react";
 import { resolvePreciseProductImage } from "@nexus/shared";
 import {
@@ -38,14 +43,11 @@ import {
   setAuthSession,
   clearAuthSession,
   validateSessionOnBoot,
+  getBackendUrl,
   BACKEND_URL as DEFAULT_BACKEND_URL
 } from "./services/apiClient";
 
-const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || (
-  window.location.origin.includes("localhost")
-    ? "http://localhost:3000"
-    : `${window.location.protocol}//${window.location.hostname}:3000`
-);
+const BACKEND_URL = getBackendUrl();
 
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "ddvwimzfr";
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "nexus_preset";
@@ -140,6 +142,7 @@ interface CartItem {
     compareAtPrice: number | null;
     seller: { businessName: string };
     productVariant: {
+      id?: string;
       name: string;
       imageUrl: string | null;
       product: { title: string };
@@ -166,6 +169,30 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [walletInitialAction, setWalletInitialAction] = useState<"send" | "topup" | null>(null);
+
+  // Wolf Page Transition Loading State (1 second duration)
+  const [pageTransitionLoading, setPageTransitionLoading] = useState<{
+    active: boolean;
+    message: string;
+  } | null>(null);
+  const pageTransitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleNavigateWithWolf = (
+    tab: "home" | "shop" | "chat" | "wallet" | "services",
+    customMessage?: string
+  ) => {
+    const labelMap: Record<string, string> = {
+      home: "Opening Home...",
+      shop: "Loading Marketplace...",
+      chat: "Connecting Messages...",
+      wallet: "Accessing Wallet...",
+      services: "Loading Services...",
+    };
+
+    triggerWolfLoad(customMessage || labelMap[tab] || "Loading...", 1000);
+    setActiveTab(tab);
+  };
 
   // Catalog States
   const productRepoRef = useRef(new ProductRepository());
@@ -218,6 +245,41 @@ export default function App() {
   // Overlays
   const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [showWishlistDrawer, setShowWishlistDrawer] = useState(false);
+  
+  // Real-time Chat Notifications
+  const [chatNotifications, setChatNotifications] = useState<any[]>([]);
+  const [activeNotificationToast, setActiveNotificationToast] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated || !BACKEND_URL) return;
+
+    const checkNotifs = async () => {
+      try {
+        const res = await authFetch(`${BACKEND_URL}/api/v1/messaging/notifications`, {}, BACKEND_URL);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.data)) {
+            setChatNotifications(json.data);
+            if (json.data.length > 0) {
+              const latest = json.data[0];
+              setActiveNotificationToast((prev: any) => {
+                if (!prev || prev.id !== latest.id) {
+                  return latest;
+                }
+                return prev;
+              });
+            }
+          }
+        }
+      } catch (e) {
+        // silent background poll
+      }
+    };
+
+    checkNotifs();
+    const interval = setInterval(checkNotifs, 3000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, BACKEND_URL, activeTab]);
   
   // Razorpay Checkout State
   const [showRazorpayCheckout, setShowRazorpayCheckout] = useState(false);
@@ -278,6 +340,7 @@ export default function App() {
   // Profile and Buy Now overlay states
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showBuyNowConfirmation, setShowBuyNowConfirmation] = useState(false);
+  const [placedOrderConfirmation, setPlacedOrderConfirmation] = useState<any | null>(null);
   const [buyNowListing, setBuyNowListing] = useState<any | null>(null);
   const [buyNowName, setBuyNowName] = useState("");
   const [buyNowPhone, setBuyNowPhone] = useState("");
@@ -420,25 +483,7 @@ export default function App() {
 
   // Fetch Catalog Products with dynamic parameters (Environment-based Paginated API)
   const fetchCatalog = async () => {
-    const minPrice = parseFloat(priceMin) || 0;
-    const maxPrice = parseFloat(priceMax) || 0;
-
-    // 1. Instant optimistic local filtering (0ms latency for food section / category switching)
-    const localFiltered = productRepoRef.current.queryProducts({
-      search: searchQuery,
-      category: selectedCategory || "ALL",
-      subcategory: selectedSubcategory || "ALL",
-      priceMin,
-      priceMax,
-      sortBy
-    });
-
-    if (localFiltered.length > 0 && paginationLimit <= 48) {
-      setProducts(localFiltered);
-      setTotalProductsCount(localFiltered.length);
-    }
-
-    // 2. Background sync with backend API
+    // 1. Fetch canonical catalog products from backend API
     try {
       const page = Math.floor(paginationLimit / 48);
       const queryParams = new URLSearchParams({
@@ -483,11 +528,20 @@ export default function App() {
       console.warn("Backend products API failed, using local repository fallback:", err);
     }
 
+    // 2. Offline fallback only if backend fails
+    const localFiltered = productRepoRef.current.queryProducts({
+      search: searchQuery,
+      category: selectedCategory || "ALL",
+      subcategory: selectedSubcategory || "ALL",
+      priceMin,
+      priceMax,
+      sortBy
+    });
     if (localFiltered.length > 0) {
       setProducts(localFiltered);
       setTotalProductsCount(localFiltered.length);
-      setIsCsvLoaded(true);
     }
+    setIsCsvLoaded(true);
   };
 
   // Fetch subcategories dynamically when selectedCategory changes (Instant 0ms + background sync)
@@ -528,6 +582,40 @@ export default function App() {
     fetchSubcategoriesList();
   }, [selectedCategory, isCsvLoaded]);
 
+  // Helper to deduplicate cart items by seller listing id and consolidate quantities
+  const deduplicateCartItems = (items: CartItem[]): CartItem[] => {
+    if (!Array.isArray(items)) return [];
+    const map = new Map<string, CartItem>();
+    for (const item of items) {
+      const listingId = item?.sellerListing?.id;
+      if (!listingId) continue;
+      const cleanQty = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
+      if (map.has(listingId)) {
+        const existing = map.get(listingId)!;
+        existing.quantity = (existing.quantity || 1) + cleanQty;
+      } else {
+        map.set(listingId, {
+          ...item,
+          quantity: cleanQty,
+        });
+      }
+    }
+    return Array.from(map.values());
+  };
+
+  // Synchronize cart state to React state and localStorage in 0ms
+  const syncCart = (rawItems: CartItem[]) => {
+    const cleaned = deduplicateCartItems(rawItems);
+    setCart(cleaned);
+    const emailKey = user?.email?.toLowerCase() || "guest";
+    try {
+      localStorage.setItem(`nexus_cart_${emailKey}`, JSON.stringify(cleaned));
+    } catch (e) {
+      console.warn("Could not save cart to localStorage", e);
+    }
+    return cleaned;
+  };
+
   // Fetch Cart (persistent DB-backed)
   const fetchCart = async (token?: string) => {
     try {
@@ -535,8 +623,8 @@ export default function App() {
       if (!activeToken) return;
       const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/cart`, {}, BACKEND_URL);
       const data = await res.json();
-      if (res.ok && data.success) {
-        setCart(data.data);
+      if (res.ok && data.success && Array.isArray(data.data)) {
+        syncCart(data.data);
       }
     } catch (e) {
       console.error("Failed to load user cart:", e);
@@ -558,6 +646,34 @@ export default function App() {
     }
   };
 
+  // Fetch live wallet balance from backend DB
+  const fetchWalletBalance = async (token?: string) => {
+    try {
+      const activeToken = token || accessToken;
+      if (!activeToken) return;
+      const res = await authFetch(`${BACKEND_URL}/api/v1/wallet`, {
+        headers: { Authorization: `Bearer ${activeToken}` }
+      }, BACKEND_URL);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          const balCents = json.data.balance;
+          setUser(prev => {
+            if (!prev) return null;
+            const updated = { ...prev, walletBalance: balCents };
+            setAuthSession(activeToken, null, updated);
+            return updated;
+          });
+          if (user?.email) {
+            firebaseMock.updateUserWallet(user.email, balCents);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch wallet balance:", e);
+    }
+  };
+
   // Helper to find listing from products catalog
   const findListing = (listingId: string) => {
     for (const p of products) {
@@ -569,19 +685,22 @@ export default function App() {
     return null;
   };
 
-  // Local fallback for Cart Additions
+  // Add / Increment Item in Cart locally and synchronously
   const localAddToCart = (listingId: string) => {
     const found = findListing(listingId);
-    if (!found || !user) return;
-    
-    const existingIndex = cart.findIndex(item => item.sellerListing.id === listingId);
+    if (!found) return;
+
+    const existingIndex = cart.findIndex(item => item?.sellerListing?.id === listingId);
     let updatedCart = [...cart];
     if (existingIndex >= 0) {
-      updatedCart[existingIndex].quantity += 1;
+      updatedCart[existingIndex] = {
+        ...updatedCart[existingIndex],
+        quantity: (updatedCart[existingIndex].quantity || 1) + 1,
+      };
     } else {
       updatedCart.push({
         id: "cart-item-" + Math.random().toString(36).substring(2, 9),
-        userId: user.id || "local-user",
+        userId: user?.id || "local-user",
         sellerListingId: listingId,
         quantity: 1,
         createdAt: new Date().toISOString(),
@@ -614,9 +733,10 @@ export default function App() {
         }
       } as any);
     }
-    setCart(updatedCart);
-    localStorage.setItem(`nexus_cart_${user.email.toLowerCase()}`, JSON.stringify(updatedCart));
-    logUserAction(user.email, `Added to Cart: ${found.product.title} (${found.variant.name})`);
+    syncCart(updatedCart);
+    if (user?.email) {
+      logUserAction(user.email, `Added to Cart: ${found.product.title} (${found.variant.name})`);
+    }
   };
 
   // Local fallback for Wishlist Additions
@@ -664,40 +784,28 @@ export default function App() {
     logUserAction(user.email, `Added to Wishlist: ${found.product.title} (${found.variant.name})`);
   };
 
-  // Add Item to DB Cart
+  // Add Item to DB Cart with instant 0ms optimistic response
   const handleAddToCart = async (listingId: string) => {
-    if (!accessToken) return;
-    if (accessToken.startsWith("simulated-firebase-token-")) {
-      localAddToCart(listingId);
-      setSuccessMsg("Item added to cart successfully!");
-      setTimeout(() => setSuccessMsg(null), 2000);
+    localAddToCart(listingId);
+    const found = findListing(listingId);
+    const title = found?.product?.title || "Item";
+    setSuccessMsg(`Added "${title}" to cart!`);
+    setTimeout(() => setSuccessMsg(null), 2000);
+
+    if (!accessToken || accessToken.startsWith("simulated-firebase-token-")) {
       return;
     }
+
     try {
-      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
+      await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ sellerListingId: listingId, quantity: 1 }),
       }, BACKEND_URL);
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSuccessMsg("Item added to cart successfully!");
-        fetchCart();
-        const found = findListing(listingId);
-        if (found && user) {
-          logUserAction(user.email, `Added to Cart: ${found.product.title} (${found.variant.name})`);
-        }
-        setTimeout(() => setSuccessMsg(null), 2000);
-      } else {
-        throw new Error(data.error?.message || "Failed to add to cart");
-      }
     } catch (e: any) {
-      console.warn("Backend add to cart failed, falling back to local storage:", e);
-      localAddToCart(listingId);
-      setSuccessMsg("Item added to cart successfully!");
-      setTimeout(() => setSuccessMsg(null), 2000);
+      console.warn("Backend add to cart sync warning (local state preserved):", e);
     }
   };
 
@@ -738,54 +846,72 @@ export default function App() {
     }
   };
 
-  // Mutate Quantity in DB Cart
+  // Mutate Quantity in DB Cart with instant 0ms optimistic update
   const handleUpdateCartQuantity = async (listingId: string, currentQuantity: number, diff: number) => {
-    if (!accessToken) return;
     const newQty = currentQuantity + diff;
     if (newQty <= 0) {
       handleRemoveFromCart(listingId);
       return;
     }
-    if (accessToken.startsWith("simulated-firebase-token-")) {
-      const updatedCart = cart.map(item => item.sellerListing.id === listingId ? { ...item, quantity: newQty } : item);
-      setCart(updatedCart);
-      localStorage.setItem(`nexus_cart_${user?.email.toLowerCase()}`, JSON.stringify(updatedCart));
+
+    const updated = cart.map(item =>
+      item?.sellerListing?.id === listingId ? { ...item, quantity: newQty } : item
+    );
+    syncCart(updated);
+
+    if (!accessToken || accessToken.startsWith("simulated-firebase-token-")) {
       return;
     }
+
     try {
-      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
+      await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ quantity: newQty }),
       }, BACKEND_URL);
-      if (res.ok) {
-        fetchCart();
-      }
     } catch (e) {
-      console.error(e);
+      console.warn("Backend update cart quantity warning (local state preserved):", e);
     }
   };
 
-  // Remove from DB Cart
+  // Remove from DB Cart with instant 0ms optimistic update
   const handleRemoveFromCart = async (listingId: string) => {
-    if (!accessToken) return;
-    if (accessToken.startsWith("simulated-firebase-token-")) {
-      const updatedCart = cart.filter(item => item.sellerListing.id !== listingId);
-      setCart(updatedCart);
-      localStorage.setItem(`nexus_cart_${user?.email.toLowerCase()}`, JSON.stringify(updatedCart));
+    const updated = cart.filter(item => item?.sellerListing?.id !== listingId);
+    syncCart(updated);
+    setSuccessMsg("Item removed from cart");
+    setTimeout(() => setSuccessMsg(null), 2000);
+
+    if (!accessToken || accessToken.startsWith("simulated-firebase-token-")) {
       return;
     }
+
     try {
-      const res = await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
+      await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items/${listingId}`, {
         method: "DELETE",
       }, BACKEND_URL);
-      if (res.ok) {
-        fetchCart();
-      }
     } catch (e) {
-      console.error(e);
+      console.warn("Backend remove from cart warning (local state preserved):", e);
+    }
+  };
+
+  // Clear entire cart with instant 0ms optimistic update
+  const handleClearCart = async () => {
+    syncCart([]);
+    setSuccessMsg("Cart cleared successfully");
+    setTimeout(() => setSuccessMsg(null), 2000);
+
+    if (!accessToken || accessToken.startsWith("simulated-firebase-token-")) {
+      return;
+    }
+
+    try {
+      await authFetch(`${BACKEND_URL}/api/v1/commerce/cart`, {
+        method: "DELETE",
+      }, BACKEND_URL);
+    } catch (e) {
+      console.warn("Backend clear cart warning:", e);
     }
   };
 
@@ -882,6 +1008,12 @@ export default function App() {
   const resolveProductImage = (prod: any, varId?: string): string => {
     if (!prod) return "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=500&auto=format&fit=crop&q=80";
     const v = varId ? prod.variants?.find((x: any) => x.id === varId) : prod.variants?.[0];
+    if (v?.imageUrl && (v.imageUrl.startsWith("http") || v.imageUrl.startsWith("/"))) {
+      return v.imageUrl;
+    }
+    if (prod.imageUrl && (prod.imageUrl.startsWith("http") || prod.imageUrl.startsWith("/"))) {
+      return prod.imageUrl;
+    }
     const catName = prod.category?.name || "";
     const subcatName = (prod.category as any)?.parent?.name || catName;
     return resolvePreciseProductImage(prod.title || "", catName, subcatName, v?.imageUrl);
@@ -973,34 +1105,174 @@ export default function App() {
     }
   };
 
+  const syncCartToBackend = async () => {
+    if (!accessToken || cart.length === 0) return;
+    try {
+      for (const item of cart) {
+        const listingId = item.sellerListing.id;
+        if (!listingId) continue;
+        await authFetch(`${BACKEND_URL}/api/v1/commerce/cart/items`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sellerListingId: listingId, quantity: item.quantity || 1 }),
+        }, BACKEND_URL).catch(() => {});
+      }
+      await fetchCart();
+    } catch (e) {
+      console.warn("Cart sync warning:", e);
+    }
+  };
+
   const handleCheckout = async () => {
     if (!accessToken) return;
+    setIsLoading(true);
+    await syncCartToBackend();
+    setIsLoading(false);
     setRazorpayCheckoutType("CART");
     setShowRazorpayCheckout(true);
     setShowCartDrawer(false);
   };
 
+  const handleWalletCheckout = async () => {
+    if (!accessToken || !user) return;
+    if ((user.walletBalance || 0) < cartTotalCents) {
+      setErrorMsg(`Insufficient wallet balance (₹${((user.walletBalance || 0) / 100).toFixed(2)}). Please top up or pay via Gateway.`);
+      setTimeout(() => setErrorMsg(null), 3500);
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      await syncCartToBackend();
+
+      const res = await authFetch(
+        `${BACKEND_URL}/api/v1/commerce/checkout`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            idempotencyKey: `chk_wallet_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            paymentMethod: "WALLET",
+            items: cart.map(c => ({ sellerListingId: c.sellerListing.id, quantity: c.quantity || 1 })),
+          }),
+        },
+        BACKEND_URL
+      );
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || json.error?.message || "Checkout failed");
+      }
+
+      // Decrement wallet balance in local state and sync with backend
+      const newBal = json.data?.newBalanceCents !== undefined
+        ? json.data.newBalanceCents
+        : Math.max(0, (user.walletBalance || 0) - cartTotalCents);
+      const updatedUser = { ...user, walletBalance: newBal };
+      setUser(updatedUser);
+      setAuthSession(accessToken, null, updatedUser);
+      firebaseMock.updateUserWallet(user.email, newBal);
+      fetchWalletBalance();
+
+      syncCart([]);
+      if (accessToken) {
+        authFetch(`${BACKEND_URL}/api/v1/commerce/cart`, { method: "DELETE" }, BACKEND_URL).catch(() => {});
+      }
+      fetchCatalog();
+      setShowCartDrawer(false);
+
+      // Trigger Amazon Order Placed & Tracking Confirmation
+      setPlacedOrderConfirmation({
+        orderId: json.data?.orderId || json.data?.id || `NEX-ORD-${Date.now().toString().slice(-6)}`,
+        totalAmount: cartTotalCents,
+        paymentMethod: "NEXUS Wallet Balance",
+        itemsCount: cart.length,
+        shippingAddress: user?.address || "Flat 402, NEXUS Heights, 100ft Road, Indiranagar, Bengaluru - 560038",
+        estimatedDelivery: "Tomorrow by 8:00 PM",
+      });
+
+      // Record activity log
+      try {
+        const actKey = `nexus_actions_${user.email.toLowerCase()}`;
+        const raw = localStorage.getItem(actKey);
+        const actions = raw ? JSON.parse(raw) : [];
+        actions.unshift({
+          id: "act_" + Date.now(),
+          text: `Purchased Cart Items #${(json.data?.orderId || json.data?.id || "").substring(0, 8)} (₹${(cartTotalCents / 100).toFixed(2)} debited from Wallet)`,
+          timestamp: new Date().toLocaleTimeString(),
+        });
+        localStorage.setItem(actKey, JSON.stringify(actions.slice(0, 25)));
+      } catch (e) {}
+
+      setSuccessMsg(`🎉 Order placed successfully! ₹${(cartTotalCents / 100).toFixed(2)} debited from wallet. Order Ref: #${(json.data?.orderId || json.data?.id || "").substring(0, 8) || "NEXUS"}`);
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to complete checkout with wallet.");
+      setTimeout(() => setErrorMsg(null), 3500);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRazorpayCheckoutSuccess = (details: any) => {
     setSuccessMsg(`Order placed successfully via ${details.paymentMethod}! Order Ref: ${details.orderId}`);
     
-    // Update wallet balance if a new balance is provided by the backend response
-    if (user && details.newBalanceINR !== undefined) {
-      const newBalanceCents = Math.round(details.newBalanceINR * 100);
-      const updatedUser = { ...user, walletBalance: newBalanceCents };
+    // Decrement wallet balance on order checkout
+    const orderCostCents = details.amountINR
+      ? Math.round(details.amountINR * 100)
+      : (details.totalAmount || cartTotalCents);
+
+    const newBalCents = details.newBalanceINR !== undefined
+      ? Math.round(details.newBalanceINR * 100)
+      : Math.max(0, (user?.walletBalance ?? 0) - orderCostCents);
+
+    if (user) {
+      const updatedUser = { ...user, walletBalance: newBalCents };
       setUser(updatedUser);
       setAuthSession(accessToken, null, updatedUser);
-      firebaseMock.updateUserWallet(user.email, newBalanceCents);
+      firebaseMock.updateUserWallet(user.email, newBalCents);
     }
+    fetchWalletBalance();
     
+    // Trigger Amazon Order Placed & Tracking Confirmation
+    setPlacedOrderConfirmation({
+      orderId: details.orderId || `NEX-ORD-${Date.now().toString().slice(-6)}`,
+      totalAmount: orderCostCents,
+      paymentMethod: details.paymentMethod || "Online Gateway (Razorpay)",
+      itemsCount: cart.length || 1,
+      shippingAddress: user?.address || "Flat 402, NEXUS Heights, 100ft Road, Indiranagar, Bengaluru - 560038",
+      estimatedDelivery: "Tomorrow by 8:00 PM",
+    });
+
+    syncCart([]);
+    setShowCartDrawer(false);
+
     // Clear selections and refresh
     if (razorpayCheckoutType === "CART") {
-      setCart([]);
-      fetchCart();
+      syncCart([]);
+      if (accessToken) {
+        authFetch(`${BACKEND_URL}/api/v1/commerce/cart`, { method: "DELETE" }, BACKEND_URL).catch(() => {});
+      }
+      setShowCartDrawer(false);
     } else {
       setSelectedProduct(null);
     }
+
+    // Record activity log
+    try {
+      const userEmail = user?.email || "customer";
+      const actKey = `nexus_actions_${userEmail.toLowerCase()}`;
+      const raw = localStorage.getItem(actKey);
+      const actions = raw ? JSON.parse(raw) : [];
+      actions.unshift({
+        id: "act_" + Date.now(),
+        text: `Order placed #${(details.orderId || "").substring(0, 8)} (${details.paymentMethod})`,
+        timestamp: new Date().toLocaleTimeString(),
+      });
+      localStorage.setItem(actKey, JSON.stringify(actions.slice(0, 25)));
+    } catch (e) {}
     
-    setActiveTab("home");
     fetchCatalog(); // Refresh catalog stock counts
     setTimeout(() => setSuccessMsg(null), 4000);
   };
@@ -1074,9 +1346,10 @@ export default function App() {
           setWishlist([]);
         }
 
-        // Fetch cart & wishlist with active token
+        // Fetch cart, wishlist & live wallet balance with active token
         fetchCart(token);
         fetchWishlist(token);
+        fetchWalletBalance(token);
 
         // Reset inputs
         setLoginEmail("");
@@ -1272,6 +1545,7 @@ export default function App() {
         setIsAuthenticated(true);
         fetchCart(res.accessToken);
         fetchWishlist(res.accessToken);
+        fetchWalletBalance(res.accessToken);
         if (res.user.activeRole === "ADMIN") {
           firebaseMock.getAllUsers(res.user.email).then(users => {
             setFirebaseUsersList(users);
@@ -1312,12 +1586,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (isAuthenticated && accessToken) {
+      fetchWalletBalance();
+    }
+  }, [activeTab, isAuthenticated, accessToken]);
+
+  useEffect(() => {
     setPaginationLimit(48);
     fetchCatalog();
   }, [isCsvLoaded, selectedCategory, selectedSubcategory, sortBy, searchQuery, priceMin, priceMax]);
 
-  const cartTotalCents = cart.reduce((acc, item) => acc + item.sellerListing.price * item.quantity, 0);
-  const cartItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+  const cartTotalCents = cart.reduce((acc, item) => acc + (item?.sellerListing?.price || 0) * (item.quantity || 1), 0);
+  const cartItemsCount = cart.reduce((acc, item) => acc + (item.quantity || 1), 0);
+
+  const cartQuantities = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of cart) {
+      if (item?.sellerListing?.id) {
+        map[item.sellerListing.id] = (map[item.sellerListing.id] || 0) + (item.quantity || 1);
+      }
+    }
+    return map;
+  }, [cart]);
 
   return (
     <div className="device-frame">
@@ -1480,10 +1770,11 @@ export default function App() {
               {/* If on home tab, render the role-specific portal home view */}
               {activeTab === "home" && (
                 <>
-                  {user?.activeRole === "CUSTOMER" && (
+                  {(user?.activeRole === "CUSTOMER" || user?.activeRole === "CONSUMER" || (user?.activeRole !== "SELLER" && user?.activeRole !== "ADMIN")) && (
                     <CustomerPortal
                       activeTab="home"
                       setActiveTab={setActiveTab}
+                      onNavigateWithWolf={handleNavigateWithWolf}
                       user={user}
                       accessToken={accessToken}
                       backendUrl={BACKEND_URL}
@@ -1529,10 +1820,26 @@ export default function App() {
                       isCsvLoaded={isCsvLoaded}
                       csvLoadProgress={csvLoadProgress}
                       openProductDetails={openProductDetails}
+                      onAddToCart={handleAddToCart}
+                      onUpdateCartQuantity={handleUpdateCartQuantity}
+                      cartQuantities={cartQuantities}
+                      onOpenCart={() => setShowCartDrawer(true)}
+                      cartItemsCount={cartItemsCount}
+                      cartTotalCents={cartTotalCents}
                       barcodeInput={barcodeInput}
                       setBarcodeInput={setBarcodeInput}
                       handleIngestOFF={handleIngestOFF}
                       isLoading={isLoading}
+                      onOpenSendMoney={() => {
+                        setActiveTab("wallet");
+                        setWalletInitialAction("send");
+                      }}
+                      onOpenAddFunds={() => {
+                        setActiveTab("wallet");
+                        setWalletInitialAction("topup");
+                      }}
+                      initialWalletAction={walletInitialAction}
+                      onClearInitialWalletAction={() => setWalletInitialAction(null)}
                     />
                   )}
                   {user?.activeRole === "SELLER" && (
@@ -1581,6 +1888,7 @@ export default function App() {
                 <CustomerPortal
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
+                  onNavigateWithWolf={handleNavigateWithWolf}
                   user={user}
                   accessToken={accessToken}
                   backendUrl={BACKEND_URL}
@@ -1626,10 +1934,26 @@ export default function App() {
                   isCsvLoaded={isCsvLoaded}
                   csvLoadProgress={csvLoadProgress}
                   openProductDetails={openProductDetails}
+                  onAddToCart={handleAddToCart}
+                  onUpdateCartQuantity={handleUpdateCartQuantity}
+                  cartQuantities={cartQuantities}
+                  onOpenCart={() => setShowCartDrawer(true)}
+                  cartItemsCount={cartItemsCount}
+                  cartTotalCents={cartTotalCents}
                   barcodeInput={barcodeInput}
                   setBarcodeInput={setBarcodeInput}
                   handleIngestOFF={handleIngestOFF}
                   isLoading={isLoading}
+                  onOpenSendMoney={() => {
+                    setActiveTab("wallet");
+                    setWalletInitialAction("send");
+                  }}
+                  onOpenAddFunds={() => {
+                    setActiveTab("wallet");
+                    setWalletInitialAction("topup");
+                  }}
+                  initialWalletAction={walletInitialAction}
+                  onClearInitialWalletAction={() => setWalletInitialAction(null)}
                 />
               )}
             </>
@@ -1873,50 +2197,254 @@ export default function App() {
         {showCartDrawer && (
           <div style={{
             position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-            background: "rgba(3, 2, 5, 0.95)", zIndex: 120, display: "flex",
-            flexDirection: "column", padding: "40px 16px 24px"
+            background: "rgba(3, 2, 5, 0.96)", zIndex: 120, display: "flex",
+            flexDirection: "column", padding: "40px 16px 24px",
+            backdropFilter: "blur(12px)"
           }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3 style={{ fontSize: "18px" }}>Your Shopping Cart</h3>
-              <button onClick={() => setShowCartDrawer(false)} style={{ background: "none", border: "none", color: "#fff", fontSize: "18px", cursor: "pointer" }}>
-                ✕
-              </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <h3 style={{ fontSize: "18px", margin: 0, fontWeight: "700" }}>Your Shopping Cart</h3>
+                {cart.length > 0 && (
+                  <span style={{
+                    fontSize: "11px",
+                    background: "rgba(167, 139, 250, 0.2)",
+                    border: "1px solid rgba(167, 139, 250, 0.4)",
+                    color: "var(--primary)",
+                    borderRadius: "12px",
+                    padding: "2px 8px",
+                    fontWeight: "700"
+                  }}>
+                    {cartItemsCount} {cartItemsCount === 1 ? "item" : "items"}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                {cart.length > 0 && (
+                  <button
+                    onClick={handleClearCart}
+                    title="Clear entire cart"
+                    style={{
+                      background: "rgba(239, 68, 68, 0.15)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      color: "#F87171",
+                      fontSize: "11px",
+                      padding: "4px 8px",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontWeight: "600"
+                    }}
+                  >
+                    Clear All
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowCartDrawer(false)}
+                  style={{ background: "none", border: "none", color: "#fff", fontSize: "20px", cursor: "pointer", padding: "4px" }}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
               {cart.length === 0 ? (
-                <p style={{ color: "var(--text-muted)", textAlign: "center", marginTop: "40px" }}>Your cart is empty.</p>
+                <div style={{ textAlign: "center", marginTop: "60px", color: "var(--text-muted)" }}>
+                  <ShoppingBag size={40} style={{ margin: "0 auto 12px", opacity: 0.4 }} />
+                  <p style={{ fontSize: "14px", fontWeight: "600", color: "#fff" }}>Your cart is empty</p>
+                  <p style={{ fontSize: "12px", marginTop: "4px" }}>Add items from the store to see them here.</p>
+                </div>
               ) : (
-                cart.map((item) => (
-                  <div key={item.id} className="glass-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ flex: 1 }}>
-                      <h4 style={{ fontSize: "13px", fontWeight: "600" }}>{item.sellerListing.productVariant.product.title}</h4>
-                      <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{item.sellerListing.productVariant.name}</span>
-                      <span style={{ fontSize: "11px", color: "var(--secondary)", display: "block", marginTop: "2px" }}>₹{(item.sellerListing.price / 100).toFixed(2)}</span>
-                      <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>Sold by: {item.sellerListing.seller.businessName}</span>
-                    </div>
+                cart.map((item) => {
+                  const unitPrice = item.sellerListing.price;
+                  const itemSubtotal = unitPrice * item.quantity;
+                  const prodImg = resolveProductImage(
+                    item.sellerListing.productVariant.product,
+                    item.sellerListing.productVariant.id
+                  );
+                  return (
+                    <div
+                      key={item.sellerListing.id}
+                      className="glass-card"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        padding: "10px 12px",
+                        borderRadius: "10px"
+                      }}
+                    >
+                      <img
+                        src={prodImg}
+                        alt={item.sellerListing.productVariant.product.title}
+                        style={{
+                          width: "48px",
+                          height: "48px",
+                          objectFit: "cover",
+                          borderRadius: "8px",
+                          border: "1px solid var(--border)",
+                          background: "#12121a",
+                          flexShrink: 0
+                        }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <h4 style={{
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          margin: 0
+                        }}>
+                          {item.sellerListing.productVariant.product.title}
+                        </h4>
+                        <span style={{ fontSize: "10px", color: "var(--text-muted)", display: "block" }}>
+                          {item.sellerListing.productVariant.name}
+                        </span>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "2px" }}>
+                          <span style={{ fontSize: "12px", fontWeight: "800", color: "var(--secondary)" }}>
+                            ₹{(itemSubtotal / 100).toFixed(2)}
+                          </span>
+                          {item.quantity > 1 && (
+                            <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>
+                              (₹{(unitPrice / 100).toFixed(2)} ea)
+                            </span>
+                          )}
+                        </div>
+                      </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <button className="btn-secondary" style={{ padding: "2px 6px" }} onClick={() => handleUpdateCartQuantity(item.sellerListing.id, item.quantity, -1)}>-</button>
-                      <span style={{ fontSize: "12px" }}>{item.quantity}</span>
-                      <button className="btn-secondary" style={{ padding: "2px 6px" }} onClick={() => handleUpdateCartQuantity(item.sellerListing.id, item.quantity, 1)}>+</button>
-                      <button onClick={() => handleRemoveFromCart(item.sellerListing.id)} style={{ background: "none", border: "none", color: "var(--error)", cursor: "pointer", marginLeft: "4px" }}>
-                        <Trash2 size={16} />
-                      </button>
+                      <div style={{ display: "flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
+                        <button
+                          className="btn-secondary"
+                          style={{
+                            padding: "0",
+                            width: "24px",
+                            height: "24px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "13px",
+                            fontWeight: "700"
+                          }}
+                          onClick={() => handleUpdateCartQuantity(item.sellerListing.id, item.quantity, -1)}
+                          title="Decrease count"
+                        >
+                          -
+                        </button>
+                        <span style={{ fontSize: "12px", fontWeight: "800", minWidth: "16px", textAlign: "center" }}>
+                          {item.quantity}
+                        </span>
+                        <button
+                          className="btn-secondary"
+                          style={{
+                            padding: "0",
+                            width: "24px",
+                            height: "24px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "13px",
+                            fontWeight: "700"
+                          }}
+                          onClick={() => handleUpdateCartQuantity(item.sellerListing.id, item.quantity, 1)}
+                          title="Increase count"
+                        >
+                          +
+                        </button>
+                        <button
+                          onClick={() => handleRemoveFromCart(item.sellerListing.id)}
+                          style={{
+                            background: "rgba(239, 68, 68, 0.15)",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                            borderRadius: "6px",
+                            color: "#F87171",
+                            cursor: "pointer",
+                            width: "26px",
+                            height: "26px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            marginLeft: "3px"
+                          }}
+                          title="Remove item"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
             {cart.length > 0 && (
-              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
-                  <span style={{ color: "var(--text-secondary)" }}>Total Amount</span>
-                  <span style={{ fontSize: "18px", fontWeight: "700", color: "var(--secondary)" }}>₹{(cartTotalCents / 100).toFixed(2)}</span>
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                {/* Total and Wallet Balance Preview */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <span style={{ color: "var(--text-secondary)", fontSize: "11px", display: "block" }}>Total Amount</span>
+                    <span style={{ fontSize: "20px", fontWeight: "800", color: "var(--secondary)" }}>₹{(cartTotalCents / 100).toFixed(2)}</span>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span style={{ color: "var(--text-muted)", fontSize: "10px", display: "block" }}>NEXUS Wallet</span>
+                    <span style={{
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: (user?.walletBalance || 0) >= cartTotalCents ? "#10B981" : "#F59E0B"
+                    }}>
+                      ₹{((user?.walletBalance || 0) / 100).toFixed(2)}
+                    </span>
+                  </div>
                 </div>
-                <button className="btn-primary" style={{ width: "100%" }} onClick={handleCheckout}>
-                  Proceed to Checkout
+
+                {/* Primary: 1-Click Pay with Wallet */}
+                <button
+                  className="btn-primary"
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    background: (user?.walletBalance || 0) >= cartTotalCents
+                      ? "linear-gradient(135deg, #10B981 0%, #059669 100%)"
+                      : "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+                    boxShadow: (user?.walletBalance || 0) >= cartTotalCents
+                      ? "0 4px 15px rgba(16, 185, 129, 0.35)"
+                      : undefined
+                  }}
+                  onClick={handleWalletCheckout}
+                  disabled={isLoading}
+                >
+                  <Zap size={16} />
+                  <span>
+                    {(user?.walletBalance || 0) >= cartTotalCents
+                      ? "⚡ 1-Click Pay with NEXUS Wallet"
+                      : "Pay with NEXUS Wallet"}
+                  </span>
+                </button>
+
+                {/* Secondary: Pay via Razorpay Online Gateway */}
+                <button
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid rgba(56, 189, 248, 0.3)",
+                    borderRadius: "10px",
+                    color: "#38BDF8",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease"
+                  }}
+                  onClick={handleCheckout}
+                >
+                  <CreditCard size={15} />
+                  <span>Pay via Online Gateway (UPI / Cards / Razorpay)</span>
                 </button>
               </div>
             )}
@@ -1996,17 +2524,147 @@ export default function App() {
             quantity: 1
           } : undefined}
           shippingAddress={{
-            name: buyNowName,
-            phone: buyNowPhone,
-            address: buyNowAddress,
-            pincode: buyNowPincode,
-            state: buyNowState,
-            country: buyNowCountry
+            name: buyNowName || user?.name || "Alice Consumer",
+            phone: buyNowPhone || user?.mobileNumber || "+919876543210",
+            address: buyNowAddress || user?.address || "Flat 402, NEXUS Heights, Tech City",
+            pincode: buyNowPincode || user?.pincode || "560100",
+            state: buyNowState || user?.state || "Karnataka",
+            country: buyNowCountry || user?.country || "India"
           }}
+          cartItems={razorpayCheckoutType === "CART" ? cart.map(c => ({
+            sellerListingId: c.sellerListing.id,
+            quantity: c.quantity || 1
+          })) : undefined}
           purposeTitle={razorpayCheckoutType === "CART" ? "NEXUS Cart Checkout" : `Buy Now: ${selectedProduct?.title}`}
           onPaymentSuccess={handleRazorpayCheckoutSuccess}
           onPaymentFailure={(msg) => setErrorMsg(msg)}
         />
+
+        {/* Amazon Order Placed & Tracking Modal Overlay */}
+        {placedOrderConfirmation && (
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(3, 2, 5, 0.96)", zIndex: 150,
+            display: "flex", flexDirection: "column", padding: "40px 16px 24px",
+            overflowY: "auto"
+          }}>
+            <div style={{
+              background: "#1E1E24",
+              border: "1px solid rgba(16, 185, 129, 0.4)",
+              borderRadius: "14px",
+              padding: "24px 18px",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "14px",
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.6)"
+            }}>
+              <div style={{
+                width: "56px",
+                height: "56px",
+                borderRadius: "50%",
+                background: "rgba(16, 185, 129, 0.2)",
+                border: "2px solid #10B981",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#10B981",
+                fontSize: "28px"
+              }}>
+                ✓
+              </div>
+
+              <div>
+                <h3 style={{ fontSize: "18px", fontWeight: "800", color: "#fff", margin: "0 0 4px" }}>
+                  Order Placed, thank you!
+                </h3>
+                <p style={{ fontSize: "11px", color: "var(--text-secondary)", margin: 0 }}>
+                  Confirmation has been sent to {user?.email}.
+                </p>
+              </div>
+
+              {/* Amazon Order Details Box */}
+              <div style={{
+                width: "100%",
+                background: "#232F3E",
+                borderRadius: "10px",
+                padding: "12px 14px",
+                textAlign: "left",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                border: "1px solid rgba(255, 153, 0, 0.2)"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "10px", color: "#A6A6A6" }}>Order ID</span>
+                  <span style={{ fontSize: "11px", fontWeight: "700", color: "#fff" }}>
+                    #{placedOrderConfirmation.orderId.slice(0, 8).toUpperCase()}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "10px", color: "#A6A6A6" }}>Total Amount</span>
+                  <span style={{ fontSize: "12px", fontWeight: "800", color: "#FF9900" }}>
+                    ₹{(placedOrderConfirmation.totalAmount / 100).toFixed(2)} ({placedOrderConfirmation.paymentMethod})
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "10px", color: "#A6A6A6" }}>Guaranteed Delivery</span>
+                  <span style={{ fontSize: "11px", fontWeight: "700", color: "#10B981" }}>
+                    {placedOrderConfirmation.estimatedDelivery}
+                  </span>
+                </div>
+                <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "6px" }}>
+                  <span style={{ fontSize: "9px", color: "#A6A6A6", textTransform: "uppercase" }}>Shipping Address</span>
+                  <p style={{ fontSize: "11px", color: "#E5E7EB", margin: "2px 0 0" }}>
+                    {placedOrderConfirmation.shippingAddress}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlacedOrderConfirmation(null);
+                    setActiveTab("home");
+                  }}
+                  style={{
+                    width: "100%",
+                    background: "#FFD814",
+                    border: "1px solid #FCD200",
+                    color: "#0F1111",
+                    borderRadius: "8px",
+                    padding: "10px",
+                    fontSize: "12px",
+                    fontWeight: "800",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    boxShadow: "0 2px 6px rgba(255, 216, 20, 0.3)"
+                  }}
+                >
+                  <Package size={15} /> Track Your Package (Live Status)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlacedOrderConfirmation(null);
+                    setActiveTab("shop");
+                  }}
+                  className="btn-secondary"
+                  style={{ width: "100%", padding: "10px", fontSize: "11px", fontWeight: "600" }}
+                >
+                  Continue Shopping on Amazon
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Profile Modal Overlay */}
         {showProfileModal && user && (
@@ -2058,7 +2716,7 @@ export default function App() {
                   <p style={{ fontSize: "13px", color: "#F3F4F6", fontWeight: "600" }}>{user.mobileNumber || "Not Set"}</p>
                 </div>
 
-                {user.activeRole === "CUSTOMER" && (
+                {(user.activeRole === "CUSTOMER" || user.activeRole === "CONSUMER") && (
                   <>
                     {user.age && (
                       <div>
@@ -2107,9 +2765,31 @@ export default function App() {
 
               {/* Actions Log / Order History */}
               <div className="glass-card" style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1, minHeight: "150px" }}>
-                <h4 style={{ fontSize: "12px", fontWeight: "700", borderBottom: "1px solid var(--border)", paddingBottom: "6px" }}>
-                  {user.activeRole === "CUSTOMER" ? "ORDER & ACTIVITY HISTORY" : "PERFORMED ACTIONS LOG"}
-                </h4>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "6px" }}>
+                  <h4 style={{ fontSize: "12px", fontWeight: "700" }}>
+                    {(user.activeRole === "CUSTOMER" || user.activeRole === "CONSUMER") ? "ORDER & ACTIVITY HISTORY" : "PERFORMED ACTIONS LOG"}
+                  </h4>
+                  {(user.activeRole === "CUSTOMER" || user.activeRole === "CONSUMER") && (
+                    <button
+                      onClick={() => {
+                        setShowProfileModal(false);
+                        setActiveTab("home");
+                      }}
+                      style={{
+                        background: "rgba(108, 92, 231, 0.2)",
+                        border: "1px solid var(--primary)",
+                        color: "#A29BFE",
+                        borderRadius: "6px",
+                        padding: "3px 8px",
+                        fontSize: "10px",
+                        fontWeight: "600",
+                        cursor: "pointer"
+                      }}
+                    >
+                      📦 Live Tracker
+                    </button>
+                  )}
+                </div>
                 
                 <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
                   {(() => {
@@ -2117,7 +2797,21 @@ export default function App() {
                     const raw = localStorage.getItem(key);
                     const actions = raw ? JSON.parse(raw) : [];
                     if (actions.length === 0) {
-                      return <p style={{ fontSize: "11px", color: "var(--text-muted)", textAlign: "center", marginTop: "20px" }}>No recent activity logged.</p>;
+                      return (
+                        <div style={{ textAlign: "center", marginTop: "14px", padding: "8px" }}>
+                          <p style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "8px" }}>Your food orders, rides & purchases are tracked live in the Home dashboard.</p>
+                          <button
+                            onClick={() => {
+                              setShowProfileModal(false);
+                              setActiveTab("home");
+                            }}
+                            className="btn-primary"
+                            style={{ fontSize: "11px", padding: "6px 12px", width: "auto" }}
+                          >
+                            📦 View Live Orders & Tracking
+                          </button>
+                        </div>
+                      );
                     }
                     return actions.map((act: any) => (
                       <div key={act.id} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", padding: "8px 10px", borderRadius: "8px" }}>
@@ -2132,6 +2826,94 @@ export default function App() {
           </div>
         )}
 
+        {/* Floating WhatsApp Notification Banner Toast */}
+        {activeNotificationToast && activeTab !== "chat" && (
+          <div
+            style={{
+              position: "fixed",
+              top: "70px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: "calc(100% - 28px)",
+              maxWidth: "400px",
+              background: "linear-gradient(135deg, rgba(6, 78, 59, 0.96), rgba(15, 23, 42, 0.98))",
+              border: "1px solid #10b981",
+              boxShadow: "0 10px 25px rgba(0,0,0,0.6), 0 0 16px rgba(16, 185, 129, 0.35)",
+              borderRadius: "14px",
+              padding: "12px 14px",
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              backdropFilter: "blur(12px)",
+            }}
+          >
+            <div
+              onClick={() => {
+                setActiveTab("chat");
+                setActiveNotificationToast(null);
+                authFetch(`${BACKEND_URL}/api/v1/messaging/notifications/ack`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: activeNotificationToast.conversationId }) }, BACKEND_URL);
+              }}
+              style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, cursor: "pointer", minWidth: 0 }}
+            >
+              <div
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "50%",
+                  background: "#10b981",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "18px",
+                  flexShrink: 0,
+                }}
+              >
+                💬
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <strong style={{ fontSize: "12px", color: "#fff" }}>{activeNotificationToast.senderName}</strong>
+                  <span style={{ fontSize: "9px", background: "rgba(16, 185, 129, 0.25)", color: "#34d399", padding: "1px 5px", borderRadius: "4px", fontWeight: "700" }}>
+                    NEXUS Direct Message
+                  </span>
+                </div>
+                <p style={{ fontSize: "11px", color: "#e2e8f0", margin: "2px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {activeNotificationToast.content}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "10px" }}>
+              <button
+                onClick={() => {
+                  setActiveTab("chat");
+                  setActiveNotificationToast(null);
+                  authFetch(`${BACKEND_URL}/api/v1/messaging/notifications/ack`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: activeNotificationToast.conversationId }) }, BACKEND_URL);
+                }}
+                style={{
+                  background: "#10b981",
+                  border: "none",
+                  color: "#fff",
+                  borderRadius: "6px",
+                  padding: "6px 10px",
+                  fontSize: "11px",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                }}
+              >
+                Reply
+              </button>
+              <button
+                onClick={() => setActiveNotificationToast(null)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "15px", padding: "2px 4px" }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Bottom Navigation */}
         {isAuthenticated && (
           <nav style={{
@@ -2139,30 +2921,73 @@ export default function App() {
             borderTop: "1px solid var(--border)", background: "rgba(20, 18, 26, 0.95)",
             backdropFilter: "blur(10px)", zIndex: 98
           }}>
-            <button onClick={() => setActiveTab("home")} style={{ background: "none", border: "none", color: activeTab === "home" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+            <button onClick={() => handleNavigateWithWolf("home")} style={{ background: "none", border: "none", color: activeTab === "home" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
               <Home size={18} />
               <span>Home</span>
             </button>
             {user?.activeRole !== "ADMIN" && (
-              <button onClick={() => setActiveTab("shop")} style={{ background: "none", border: "none", color: activeTab === "shop" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+              <button onClick={() => handleNavigateWithWolf("shop")} style={{ background: "none", border: "none", color: activeTab === "shop" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
                 <ShoppingBag size={18} />
                 <span>Shop</span>
               </button>
             )}
-            <button onClick={() => setActiveTab("chat")} style={{ background: "none", border: "none", color: activeTab === "chat" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+            <button
+              onClick={() => {
+                handleNavigateWithWolf("chat");
+                setActiveNotificationToast(null);
+                authFetch(`${BACKEND_URL}/api/v1/messaging/notifications/ack`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, BACKEND_URL);
+              }}
+              style={{
+                background: "none",
+                border: "none",
+                color: activeTab === "chat" ? "var(--primary)" : "var(--text-secondary)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "4px",
+                cursor: "pointer",
+                fontSize: "10px",
+                position: "relative",
+              }}
+            >
               <MessageSquare size={18} />
+              {chatNotifications.length > 0 && activeTab !== "chat" && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "-3px",
+                    right: "12px",
+                    background: "#ef4444",
+                    color: "#fff",
+                    fontSize: "8px",
+                    fontWeight: "800",
+                    width: "15px",
+                    height: "15px",
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 0 8px rgba(239, 68, 68, 0.8)",
+                  }}
+                >
+                  {chatNotifications.length}
+                </span>
+              )}
               <span>Chat</span>
             </button>
-            <button onClick={() => setActiveTab("wallet")} style={{ background: "none", border: "none", color: activeTab === "wallet" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+            <button onClick={() => handleNavigateWithWolf("wallet")} style={{ background: "none", border: "none", color: activeTab === "wallet" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
               <Wallet size={18} />
               <span>Wallet</span>
             </button>
-            <button onClick={() => setActiveTab("services")} style={{ background: "none", border: "none", color: activeTab === "services" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
+            <button onClick={() => handleNavigateWithWolf("services")} style={{ background: "none", border: "none", color: activeTab === "services" ? "var(--primary)" : "var(--text-secondary)", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", cursor: "pointer", fontSize: "10px" }}>
               <Grid size={18} />
               <span>Services</span>
             </button>
           </nav>
         )}
+
+        {/* Small Centered Cyber Wolf Loading Card (App-wide for every button activity & transition) */}
+        <GlobalWolfLoader />
       </div>
     </div>
   );

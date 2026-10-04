@@ -11,7 +11,8 @@ import {
   CreditCard,
   Smartphone,
   Building,
-  Wallet as WalletIcon
+  Wallet as WalletIcon,
+  Zap
 } from "lucide-react";
 import { authFetch } from "./services/apiClient";
 
@@ -35,6 +36,10 @@ export interface RazorpayModalProps {
     state?: string;
     country?: string;
   };
+  cartItems?: {
+    sellerListingId: string;
+    quantity: number;
+  }[];
   purposeTitle?: string;
   onPaymentSuccess: (details: {
     paymentId: string;
@@ -57,6 +62,7 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
   paymentType = "WALLET_TOPUP",
   buyNow,
   shippingAddress,
+  cartItems,
   purposeTitle,
   onPaymentSuccess,
   onPaymentFailure,
@@ -104,6 +110,72 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
     });
   };
 
+  // Instant Test Simulator Payment Handler
+  const handleSimulatedPayment = async (simulatedMethod: string = "CARD") => {
+    setStatus("VERIFYING");
+    setErrorMessage(null);
+
+    try {
+      const verifyEndpoint =
+        paymentType === "COMMERCE_CHECKOUT"
+          ? `${backendUrl}/api/v1/commerce/checkout/razorpay/verify-payment`
+          : `${backendUrl}/api/v1/wallet/razorpay/verify-payment`;
+
+      const simOrderId = orderData?.orderId || `order_sim_${Date.now()}`;
+      const simPaymentId = `pay_sim_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const simSignature = `sig_mock_${Date.now()}`;
+
+      const verifyPayload: any = {
+        razorpay_order_id: simOrderId,
+        razorpay_payment_id: simPaymentId,
+        razorpay_signature: simSignature,
+        amount: orderData?.amountINR || amount,
+        paymentMethod: `SIMULATED_${simulatedMethod}`,
+      };
+
+      if (paymentType === "COMMERCE_CHECKOUT") {
+        verifyPayload.buyNow = buyNow;
+        verifyPayload.shippingAddress = shippingAddress;
+        verifyPayload.items = cartItems;
+      }
+
+      const res = await authFetch(
+        verifyEndpoint,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(verifyPayload),
+        },
+        backendUrl
+      );
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(
+          json.error?.message || json.message || "Payment simulation verification failed on backend"
+        );
+      }
+
+      setStatus("SUCCESS");
+      setTimeout(() => {
+        onPaymentSuccess({
+          paymentId: simPaymentId,
+          orderId: simOrderId,
+          amount: orderData?.amountINR || amount,
+          newBalanceINR: json.data?.newBalanceINR,
+          paymentMethod: `Razorpay Test Simulator (${simulatedMethod})`,
+          rawResponse: json.data,
+        });
+        onClose();
+      }, 1000);
+    } catch (err: any) {
+      console.error("[Razorpay Simulator] Error:", err);
+      setStatus("FAILED");
+      setErrorMessage(err.message || "Simulation payment failed.");
+      onPaymentFailure(err.message || "Simulation payment failed");
+    }
+  };
+
   // Launch the official Razorpay Checkout Popup
   const launchOfficialCheckout = async (order: {
     orderId: string;
@@ -120,7 +192,7 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
     if (!sdkLoaded || !(window as any).Razorpay) {
       setStatus("FAILED");
       setErrorMessage(
-        "Unable to load official Razorpay Checkout SDK. Please verify your internet connection and try again."
+        "Unable to load official Razorpay Checkout SDK. Use the Instant Test Simulator below."
       );
       return;
     }
@@ -187,6 +259,7 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
             if (paymentType === "COMMERCE_CHECKOUT") {
               verifyPayload.buyNow = buyNow;
               verifyPayload.shippingAddress = shippingAddress;
+              verifyPayload.items = cartItems;
             }
 
             const res = await authFetch(
@@ -230,16 +303,19 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
       const rzpInstance = new (window as any).Razorpay(options);
 
       rzpInstance.on("payment.failed", (failRes: any) => {
-        console.warn("[Razorpay] Payment failed:", failRes.error);
+        console.warn("[Razorpay] Payment failed or unverified test key:", failRes.error);
         setStatus("FAILED");
-        setErrorMessage(failRes.error?.description || "Payment failed or was cancelled by user.");
+        setErrorMessage(
+          failRes.error?.description ||
+          "Payment was cancelled or test mode gateway closed. Complete your order using the Instant Test Simulator below."
+        );
       });
 
       rzpInstance.open();
     } catch (err: any) {
       console.error("[Razorpay] Exception opening checkout:", err);
       setStatus("FAILED");
-      setErrorMessage(err.message || "Failed to initialize official Razorpay popup.");
+      setErrorMessage(err.message || "Failed to initialize official Razorpay popup. Use the Test Simulator below.");
     }
   };
 
@@ -263,7 +339,7 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
 
         const requestBody =
           paymentType === "COMMERCE_CHECKOUT"
-            ? { shippingAddress, buyNow }
+            ? { shippingAddress, buyNow, items: cartItems }
             : { amount };
 
         const res = await authFetch(
@@ -285,10 +361,16 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
 
         if (isMounted) {
           setOrderData(json.data);
-          // Automatically launch the official Razorpay Checkout popup
-          if (!hasAutoLaunchedRef.current) {
-            hasAutoLaunchedRef.current = true;
-            launchOfficialCheckout(json.data);
+          // Only auto-launch the external popup if configured with live production/registered keys.
+          // In test/development mode with mock keys, remain in READY status so user can complete with 1 click.
+          const isRealRegisteredKey = json.data.keyId && !json.data.keyId.startsWith("rzp_test_NEXUS");
+          if (isRealRegisteredKey) {
+            if (!hasAutoLaunchedRef.current) {
+              hasAutoLaunchedRef.current = true;
+              launchOfficialCheckout(json.data);
+            }
+          } else {
+            setStatus("READY");
           }
         }
       } catch (err: any) {
@@ -304,7 +386,7 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [amount, backendUrl, paymentType, JSON.stringify(buyNow), JSON.stringify(shippingAddress)]);
+  }, [amount, backendUrl, paymentType, JSON.stringify(buyNow), JSON.stringify(shippingAddress), JSON.stringify(cartItems)]);
 
   const displayAmount = orderData ? orderData.amountINR : amount;
 
@@ -516,57 +598,98 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
                 </div>
               )}
 
-              {/* Action Button to Launch / Re-launch */}
+              {/* Action Button to Launch / Re-launch or Simulate */}
               {orderData && (
-                <button
-                  type="button"
-                  onClick={() => launchOfficialCheckout(orderData)}
-                  style={{
-                    width: "100%",
-                    padding: "14px",
-                    background: "linear-gradient(135deg, #0284C7, #0369A1)",
-                    border: "none",
-                    borderRadius: "12px",
-                    color: "#fff",
-                    fontSize: "14px",
-                    fontWeight: "700",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                    cursor: "pointer",
-                    boxShadow: "0 4px 15px rgba(2, 132, 199, 0.4)",
-                    transition: "all 0.2s ease",
-                  }}
-                >
-                  <Lock size={16} />
-                  <span>{status === "POPUP_OPEN" ? "Re-open Razorpay Window" : `Pay ₹${displayAmount.toFixed(2)} with Razorpay`}</span>
-                  <ExternalLink size={14} />
-                </button>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSimulatedPayment("CARD")}
+                    style={{
+                      width: "100%",
+                      padding: "14px",
+                      background: "linear-gradient(135deg, #10B981 0%, #059669 100%)",
+                      border: "none",
+                      borderRadius: "12px",
+                      color: "#fff",
+                      fontSize: "14px",
+                      fontWeight: "700",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 15px rgba(16, 185, 129, 0.4)",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    <Zap size={18} />
+                    <span>⚡ Complete Payment (Instant Simulator)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => launchOfficialCheckout(orderData)}
+                    style={{
+                      width: "100%",
+                      padding: "11px",
+                      background: "rgba(255, 255, 255, 0.05)",
+                      border: "1px solid rgba(56, 189, 248, 0.3)",
+                      borderRadius: "10px",
+                      color: "#38BDF8",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    <ExternalLink size={14} />
+                    <span>{status === "POPUP_OPEN" ? "Re-open Razorpay Popup" : "Launch Official Razorpay Window"}</span>
+                  </button>
+                </div>
               )}
 
-              {/* Supported Payment Methods Badges */}
+              {/* Supported Payment Methods Quick Simulators */}
               <div style={{ marginTop: "4px" }}>
                 <p style={{ fontSize: "10px", color: "#64748B", textAlign: "center", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  Supported Payment Options
+                  Select Test Method to Authorize
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
-                  <div style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(255, 255, 255, 0.06)", borderRadius: "8px", padding: "8px 4px", textAlign: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSimulatedPayment("UPI")}
+                    style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(56, 189, 248, 0.2)", borderRadius: "8px", padding: "8px 4px", textAlign: "center", cursor: "pointer", color: "inherit" }}
+                  >
                     <Smartphone size={14} color="#38BDF8" style={{ margin: "0 auto 4px" }} />
                     <span style={{ fontSize: "10px", color: "#94A3B8", display: "block" }}>UPI / QR</span>
-                  </div>
-                  <div style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(255, 255, 255, 0.06)", borderRadius: "8px", padding: "8px 4px", textAlign: "center" }}>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSimulatedPayment("CARD")}
+                    style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(56, 189, 248, 0.2)", borderRadius: "8px", padding: "8px 4px", textAlign: "center", cursor: "pointer", color: "inherit" }}
+                  >
                     <CreditCard size={14} color="#38BDF8" style={{ margin: "0 auto 4px" }} />
                     <span style={{ fontSize: "10px", color: "#94A3B8", display: "block" }}>Cards</span>
-                  </div>
-                  <div style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(255, 255, 255, 0.06)", borderRadius: "8px", padding: "8px 4px", textAlign: "center" }}>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSimulatedPayment("NETBANKING")}
+                    style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(56, 189, 248, 0.2)", borderRadius: "8px", padding: "8px 4px", textAlign: "center", cursor: "pointer", color: "inherit" }}
+                  >
                     <Building size={14} color="#38BDF8" style={{ margin: "0 auto 4px" }} />
                     <span style={{ fontSize: "10px", color: "#94A3B8", display: "block" }}>NetBanking</span>
-                  </div>
-                  <div style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(255, 255, 255, 0.06)", borderRadius: "8px", padding: "8px 4px", textAlign: "center" }}>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSimulatedPayment("WALLET")}
+                    style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(56, 189, 248, 0.2)", borderRadius: "8px", padding: "8px 4px", textAlign: "center", cursor: "pointer", color: "inherit" }}
+                  >
                     <WalletIcon size={14} color="#38BDF8" style={{ margin: "0 auto 4px" }} />
                     <span style={{ fontSize: "10px", color: "#94A3B8", display: "block" }}>Wallets</span>
-                  </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -647,47 +770,75 @@ export const RazorpayModal: React.FC<RazorpayModalProps> = ({
               <h4 style={{ fontSize: "16px", fontWeight: "700", color: "#F1F5F9", marginBottom: "6px" }}>
                 Payment Incomplete or Cancelled
               </h4>
-              <p style={{ fontSize: "12px", color: "#FCA5A5", lineHeight: 1.5, marginBottom: "20px" }}>
+              <p style={{ fontSize: "12px", color: "#FCA5A5", lineHeight: 1.5, marginBottom: "16px" }}>
                 {errorMessage || "The transaction could not be completed."}
               </p>
 
-              <div style={{ display: "flex", gap: "10px" }}>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    background: "rgba(255, 255, 255, 0.05)",
-                    border: "1px solid rgba(255, 255, 255, 0.1)",
-                    borderRadius: "10px",
-                    color: "#94A3B8",
-                    fontSize: "13px",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                 {orderData && (
                   <button
                     type="button"
-                    onClick={() => launchOfficialCheckout(orderData)}
+                    onClick={() => handleSimulatedPayment("CARD")}
+                    style={{
+                      width: "100%",
+                      padding: "13px",
+                      background: "linear-gradient(135deg, #10B981 0%, #059669 100%)",
+                      border: "none",
+                      borderRadius: "12px",
+                      color: "#fff",
+                      fontSize: "14px",
+                      fontWeight: "700",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 15px rgba(16, 185, 129, 0.4)",
+                    }}
+                  >
+                    <Zap size={16} />
+                    <span>⚡ Complete Order with Simulator</span>
+                  </button>
+                )}
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button
+                    type="button"
+                    onClick={onClose}
                     style={{
                       flex: 1,
-                      padding: "12px",
-                      background: "linear-gradient(135deg, #0284C7, #0369A1)",
-                      border: "none",
+                      padding: "11px",
+                      background: "rgba(255, 255, 255, 0.05)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
                       borderRadius: "10px",
-                      color: "#fff",
+                      color: "#94A3B8",
                       fontSize: "13px",
-                      fontWeight: "700",
+                      fontWeight: "600",
                       cursor: "pointer",
                     }}
                   >
-                    Try Again
+                    Cancel
                   </button>
-                )}
+                  {orderData && (
+                    <button
+                      type="button"
+                      onClick={() => launchOfficialCheckout(orderData)}
+                      style={{
+                        flex: 1,
+                        padding: "11px",
+                        background: "rgba(56, 189, 248, 0.15)",
+                        border: "1px solid rgba(56, 189, 248, 0.3)",
+                        borderRadius: "10px",
+                        color: "#38BDF8",
+                        fontSize: "13px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Re-open Window
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}

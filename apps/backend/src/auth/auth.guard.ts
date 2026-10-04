@@ -33,6 +33,7 @@ export class AuthGuard implements CanActivate {
           const rolesList = defaultUser.roles.map((r) => r.role);
           (request as any)["user"] = {
             userId: defaultUser.id,
+            sub: defaultUser.id,
             email: defaultUser.email,
             activeRole: rolesList.includes("CONSUMER") ? "CONSUMER" : rolesList[0] || "CONSUMER",
             roles: rolesList,
@@ -64,6 +65,7 @@ export class AuthGuard implements CanActivate {
         const rolesList = user.roles.map((r) => r.role);
         (request as any)["user"] = {
           userId: user.id,
+          sub: user.id,
           email: user.email,
           activeRole: rolesList.includes("CONSUMER") ? "CONSUMER" : rolesList[0] || "CONSUMER",
           roles: rolesList,
@@ -80,6 +82,7 @@ export class AuthGuard implements CanActivate {
       // Inject the user payload into request for decorators & downstream guards
       (request as any)["user"] = {
         userId: payload.sub,
+        sub: payload.sub,
         email: payload.email,
         activeRole: payload.activeRole,
         roles: payload.roles,
@@ -95,6 +98,7 @@ export class AuthGuard implements CanActivate {
           const rolesList = devUser.roles.map((r) => r.role);
           (request as any)["user"] = {
             userId: devUser.id,
+            sub: devUser.id,
             email: devUser.email,
             activeRole: rolesList.includes("CONSUMER") ? "CONSUMER" : rolesList[0] || "CONSUMER",
             roles: rolesList,

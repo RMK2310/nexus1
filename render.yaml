@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: nexus-backend
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build:backend
+    startCommand: node apps/backend/dist/src/main.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        value: file:./nexus.db
+      - key: JWT_ACCESS_SECRET
+        value: nexus_super_access_key_secret_2026_prod_secure_key
+      - key: JWT_REFRESH_SECRET
+        value: nexus_super_refresh_key_secret_2026_prod_secure_key
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: RAZORPAY_KEY_ID
+        value: rzp_test_TegqMDfICHPOyU
+      - key: RAZORPAY_KEY_SECRET
+        value: JujwkOttpQ66a5wVnWenkKlY

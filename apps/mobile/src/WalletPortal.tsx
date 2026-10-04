@@ -33,6 +33,8 @@ interface WalletPortalProps {
   onBalanceUpdate?: (newBalance: number) => void;
   setGlobalSuccessMsg?: (msg: string) => void;
   setGlobalErrorMsg?: (msg: string) => void;
+  initialAction?: "send" | "topup" | null;
+  onClearInitialAction?: () => void;
 }
 
 interface TransactionItem {
@@ -59,7 +61,9 @@ export const WalletPortal: React.FC<WalletPortalProps> = ({
   backendUrl,
   onBalanceUpdate,
   setGlobalSuccessMsg,
-  setGlobalErrorMsg
+  setGlobalErrorMsg,
+  initialAction,
+  onClearInitialAction
 }) => {
   // Wallet State
   const [walletData, setWalletData] = useState<{
@@ -173,6 +177,17 @@ export const WalletPortal: React.FC<WalletPortalProps> = ({
     fetchWallet();
     fetchTransactions();
   }, [accessToken]);
+
+  // Handle auto-opening Send or Top-up modals from external triggers (e.g. Home page)
+  useEffect(() => {
+    if (initialAction === "send") {
+      setShowSendModal(true);
+      if (onClearInitialAction) onClearInitialAction();
+    } else if (initialAction === "topup") {
+      setShowTopUpModal(true);
+      if (onClearInitialAction) onClearInitialAction();
+    }
+  }, [initialAction]);
 
   // Recipient search autocomplete
   useEffect(() => {

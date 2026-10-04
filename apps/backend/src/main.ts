@@ -54,16 +54,21 @@ async function bootstrap() {
   app.use(express.static(publicPath));
   app.use("/images", express.static(path.join(publicPath, "images")));
 
-  // ── CORS Configuration (Environment-Driven) ──
-  const allowedOrigins =
-    envConfig.NODE_ENV === "production"
-      ? envConfig.CORS_ORIGINS.length > 0
-        ? envConfig.CORS_ORIGINS
-        : ["https://nexus.com", "https://admin.nexus.com"]
-      : true; // Reflects request origin dynamically in development
-
+  // ── CORS Configuration (Permissive for Native Android & Web) ──
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl) or capacitor / localhost
+      if (
+        !origin ||
+        origin === "null" ||
+        origin.startsWith("capacitor://") ||
+        origin.startsWith("http://localhost") ||
+        origin.startsWith("https://localhost")
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true,
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
   });
@@ -91,8 +96,8 @@ async function bootstrap() {
   // ── Graceful Shutdown ──
   app.enableShutdownHooks();
 
-  const port = envConfig.PORT;
-  await app.listen(port);
+  const port = envConfig.PORT || 3000;
+  await app.listen(port, "0.0.0.0");
   logger.log(`NEXUS Super-App server initialized on port ${port} [${envConfig.NODE_ENV}]`);
 }
 
