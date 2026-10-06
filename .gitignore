@@ -11,9 +11,9 @@ apps/*/dist
 packages/*/dist
 *.tsbuildinfo
 
-# Database
-nexus.db
-*.db
+# Database temporary files
+packages/**/*.db
+packages/*.db
 *.db-journal
 
 # Env files

@@ -15,6 +15,10 @@
     "dev:backend": "npm run start:dev --workspace=apps/backend",
     "dev:mobile": "npm run dev --workspace=apps/mobile",
     "dev:admin": "npm run dev --workspace=apps/admin",
+    "build:mobile": "npm run build --workspace=apps/mobile",
+    "sync:android": "npm run build:mobile && npx cap sync android",
+    "build:apk": "powershell -ExecutionPolicy Bypass -File ./scripts/build-apk.ps1",
+    "deploy:firebase": "firebase deploy --only hosting",
     "test": "npm run test --workspaces --if-present"
   },
   "dependencies": {

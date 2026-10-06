@@ -17,3 +17,11 @@ for (const p of pathsToTry) {
     break;
   }
 }
+
+// Guarantee relative SQLite paths resolve to absolute path relative to process.cwd()
+if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith("file:.")) {
+  const relPath = process.env.DATABASE_URL.replace(/^file:/, "");
+  const absPath = path.resolve(process.cwd(), relPath).replace(/\\/g, "/");
+  process.env.DATABASE_URL = `file:${absPath}`;
+}
+
