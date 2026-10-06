@@ -19,10 +19,10 @@ export const getBackendUrl = (): string => {
     window.location.origin.includes("https://localhost");
 
   if (isNative) {
-    return "http://172.19.8.72:3000";
+    return "https://nexus-backend-7n5v.onrender.com";
   }
 
-  return "http://localhost:3000";
+  return "https://nexus-backend-7n5v.onrender.com";
 };
 
 export const BACKEND_URL = getBackendUrl();
